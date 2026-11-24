@@ -15,7 +15,7 @@ const globalSales = new Map(), tensorSales = new Map(), recentMints = new Map();
 const seenMagic = new Set(), seenTensor = new Set(), seenMints = new Set();
 let magicLastPollAt=null, magicPollError=null, tensorLastPollAt=null, tensorPollError=null, mintLastPollAt=null, mintPollError=null;
 let magicBaselineReady=false, magicBusy=false, tensorBusy=false, mintBusy=false;
-let collectionsCache=null, collectionsCacheAt=0, directoryCache=null, directoryCacheAt=0;
+let collectionsCache=null, collectionsCacheAt=0, directoryCache=null, directoryCacheAt=0, collectionMintCache=null, collectionMintCacheAt=0;
 
 app.use(express.static(path.join(__dirname,"public")));
 app.use(express.json());
@@ -152,6 +152,30 @@ app.get("/api/collection/:symbol/listings",async(req,res)=>{
 });
 app.get("/api/live-sales",(_req,res)=>res.json({sales:[...globalSales.values()].sort((a,b)=>b.time-a.time).slice(0,100),source:"Magic Eden on-chain via Helius",lastPollAt:magicLastPollAt,warning:magicPollError,note:"Observed sales since this monitor started; not historical backfill."}));
 app.get("/api/new-mints",(_req,res)=>res.json({mints:[...recentMints.values()].sort((a,b)=>b.time-a.time),source:"Helius Mainnet",lastPollAt:mintLastPollAt,warning:mintPollError,note:"Only Helius-classified NFT mint transactions are shown; this is not a complete mint index."}));
+app.get("/api/collection-mints",async(req,res)=>{
+  try{
+    if(!req.query.refresh&&collectionMintCache&&Date.now()-collectionMintCacheAt<5*60*1000)return res.json(collectionMintCache);
+    const base=await meGet("/collections?offset=0&limit=100");
+    const list=(Array.isArray(base)?base:[]).filter(c=>c?.symbol),rows=[];
+    for(let i=0;i<list.length;i+=5){
+      const batch=await Promise.all(list.slice(i,i+5).map(async c=>{
+        let detail={},stats={};
+        try{[detail,stats]=await Promise.all([
+          meGet("/collections/"+encodeURIComponent(c.symbol)),
+          meGet("/collections/"+encodeURIComponent(c.symbol)+"/stats")
+        ]);}catch{}
+        const pick=(obj,keys)=>{for(const k of keys){const v=obj?.[k];if(v!==undefined&&v!==null&&v!==""){const n=Number(v);return Number.isFinite(n)?n:v;}}return null;};
+        const totalNfts=pick(detail,["size","maxSupply","max_supply","totalSupply","total_supply"])??pick(stats,["size","maxSupply","max_supply"]);
+        const minted=pick(stats,["minted","mintedCount","minted_count","supply","totalSupply","total_supply"])??pick(detail,["minted","mintedCount","minted_count","supply"]);
+        const mintPrice=pick(detail,["mintPrice","mintPriceSol","mint_price","mint_price_sol"])??pick(stats,["mintPrice","mintPriceSol","mint_price","mint_price_sol"]);
+        return {symbol:c.symbol,name:c.name||detail.name||c.symbol,image:c.image||detail.image||detail.imageURI||"",totalNfts,minted,mintPrice};
+      }));
+      rows.push(...batch);
+    }
+    const data={collections:rows,collectionsWithMintData:rows.filter(c=>c.totalNfts!==null||c.minted!==null||c.mintPrice!==null).length,source:"Magic Eden collection metadata and stats",warning:"A — means Magic Eden did not publish that field for the collection; it is not estimated."};
+    collectionMintCache=data;collectionMintCacheAt=Date.now();res.json(data);
+  }catch(error){res.status(502).json({collections:[],error:error.message,warning:"Could not retrieve collection mint details."});}
+});
 app.get("/api/volume",(_req,res)=>{
   const result={};for(const [label,mins] of Object.entries(windows()))result[label]=volumeWindow(globalSales,mins);
   res.json({windows:result,lastPollAt:magicLastPollAt,warning:magicPollError,source:"Observed Magic Eden sales"});
