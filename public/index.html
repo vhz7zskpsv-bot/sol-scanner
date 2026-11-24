@@ -358,7 +358,7 @@ async function loadLiveSales(symbol){
   try{
     const data=await get("/api/collection/"+encodeURIComponent(symbol)+"/activities?limit=50");
     const all=data.activities||[];
-    const salesOnly=all.filter(a=>{const t=String(a.type||a.txType||a.activityType||"").toLowerCase();return ["buy","sale","buynow","acceptbid"].some(k=>t.includes(k));});
+    const salesOnly=all.filter(a=>{const t=String(a.type||a.txType||a.activityType||"").toLowerCase().replace(/[\\s-]+/g,"_");return ["buy","sale","accept_bid","fill_order","nft_sale"].some(k=>t.includes(k));});
     $("liveSaleResults").innerHTML=salesOnly.slice(0,20).map(a=>{
       const title=a.token?.name||a.title||a.tokenMint||a.mintAddress||"NFT sale";
       const price=a.price??a.salePrice??a.amount;
