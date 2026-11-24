@@ -1222,7 +1222,7 @@ app.get("/api/marketplace/collection-link", async (req, res) => {
 app.get("/api/marketplace/collection/:slug/attributes", async (req, res) => {
   try {
     const slug = String(req.params.slug || "").trim();
-    const raw = await tensorApiGet("/collections/traits?collId=" + encodeURIComponent(slug));
+    const raw = await tensorApiGet("/collections/" + encodeURIComponent(slug) + "/traits");
     const attributes = raw.attributes || raw.traits || raw;
     res.json({ attributes, source: "Tensor" });
   } catch (error) {
