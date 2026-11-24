@@ -28,3 +28,14 @@ Deploy as a Node.js web service on a host such as Render or Railway. Set the env
 - Helius is currently used for a Mainnet RPC health check; full on-chain NFT mint indexing is a later step.
 
 Never share wallet seed phrases or private keys. API keys belong only in deployment environment secrets.
+
+
+## Deploy on Render (free starter)
+
+Use the one-click Render Blueprint button below. Render will ask you to connect GitHub and approve creation of one free web service.
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/vhz7zskpsv-bot/sol-scanner)
+
+When Render asks for secrets, enter your Helius API key in the `HELIUS_API_KEY` field. Keep it in Render's Environment settings only; never commit it to GitHub. The Magic Eden key is optional and can be left blank unless your marketplace API access requires one.
+
+The free web service may sleep when idle and can take a short time to wake on the next visit.
