@@ -1177,7 +1177,7 @@ app.get("/api/collections", async (_req, res) => {
       return res.json(collectionsCache);
     }
     const raw = await meGet("/collections?offset=0&limit=100");
-    const collections = (Array.isArray(raw) ? raw : []).map((c) => ({
+    const collections = (Array.isArray(raw) ? raw : []).filter(c => c && c.symbol).map((c) => ({
       symbol: c.symbol,
       name: c.name || c.symbol || "Unnamed collection",
       image: c.image || c.imageURI || "",
@@ -1189,8 +1189,24 @@ app.get("/api/collections", async (_req, res) => {
       source: "Magic Eden"
     }));
 
-    // Keep this list endpoint light; collection-specific stats load on demand.
-    collectionsCache = { collections, source: "Magic Eden" };
+    // The directory feed does not include a reliable highest bid. Enrich the
+    // 30 rows displayed by the dashboard with the dedicated collection stats
+    // endpoint, using bounded concurrency to avoid API bursts.
+    for (let i = 0; i < Math.min(collections.length, 30); i += 5) {
+      await Promise.all(collections.slice(i, i + 5).map(async (collection) => {
+        try {
+          const stats = await meGet(`/collections/${encodeURIComponent(collection.symbol)}/stats`);
+          collection.floorPrice = sol(stats.floorPrice) ?? collection.floorPrice;
+          collection.highestBid = sol(stats.highestBid ?? stats.highestOffer ?? stats.highestBidPrice);
+          collection.listedCount = stats.listedCount ?? collection.listedCount;
+          collection.volume24h = sol(stats.volume24hr ?? stats.volume24h) ?? collection.volume24h;
+        } catch {
+          // Keep directory values where available; a missing bid stays null.
+        }
+      }));
+    }
+
+    collectionsCache = { collections, source: "Magic Eden collection stats" };
     collectionsCacheAt = Date.now();
     res.json(collectionsCache);
   } catch (error) {
