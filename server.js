@@ -422,6 +422,41 @@ async function pollNewMints() {
   }
 }
 
+function getSniperExecutionReadiness() {
+  const signer = getSniperSignerStatus();
+  let solanaWeb3Installed = false;
+  try { require.resolve("@solana/web3.js"); solanaWeb3Installed = true; } catch {}
+  const tensorKeyConfigured = Boolean(process.env.TENSOR_API_KEY);
+  const magicEdenKeyConfigured = Boolean(process.env.MAGIC_EDEN_API_KEY);
+  const checks = {
+    dedicatedWalletSignerVerified: signer.signerConfigured,
+    tensorBuyApiCredentialConfigured: tensorKeyConfigured,
+    magicEdenBuyInstructionCredentialConfigured: magicEdenKeyConfigured,
+    solanaRpcConfigured: Boolean(HELIUS_RPC),
+    solanaTransactionLibraryInstalled: solanaWeb3Installed,
+    transactionSimulationImplemented: false,
+    jitoBundleSubmissionImplemented: false,
+    marketplaceBuyExecutorImplemented: false
+  };
+  const blockers = Object.entries(checks)
+    .filter(([name, passed]) => !passed)
+    .map(([name]) => name);
+  return {
+    mode: "read-only-readiness-check",
+    autoBuyEnabled: false,
+    liveBuyingEnabled: false,
+    buyExecutorImplemented: false,
+    walletAddress: signer.walletAddress,
+    checks,
+    blockers,
+    note: "This endpoint never creates, signs, or submits a transaction. Tensor buy transaction construction requires TENSOR_API_KEY; Magic Eden buy instruction endpoints require MAGIC_EDEN_API_KEY."
+  };
+}
+
+app.get("/api/sniper/execution-readiness", (_req, res) => {
+  res.json(getSniperExecutionReadiness());
+});
+
 app.get("/api/sniper/status", async (_req, res) => {
   let storageMounted = false;
   try { await fs.access(SNIPER_DATA_DIR); storageMounted = true; }
