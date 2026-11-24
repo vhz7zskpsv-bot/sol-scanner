@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const fs = require("fs/promises");
 
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
@@ -163,6 +164,13 @@ app.get("/api/new",async(_req,res)=>{
   try{const raw=await meGet("/collections?offset=0&limit=500");const collections=(Array.isArray(raw)?raw:[]).filter(c=>c.symbol&&c.createdAt&&Number.isFinite(new Date(c.createdAt).getTime())).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,20).map(c=>({symbol:c.symbol,name:c.name||c.symbol,image:c.image||c.imageURI||"",floorPrice:sol(c.floorPrice),createdAt:c.createdAt}));res.json({collections,source:"Magic Eden"});}
   catch(error){res.status(502).json({collections:[],error:error.message});}
 });
+
+async function removeLegacyBotData(){
+  for(const file of ["/data/sniper-rules.json","/data/bid-rules.json"]){
+    try{await fs.unlink(file);}catch(error){if(error.code!=="ENOENT")console.error("Could not remove legacy bot data:",error.message);}
+  }
+}
+removeLegacyBotData();
 
 app.listen(PORT,()=>console.log("NFT Monitor running on port "+PORT));
 setInterval(()=>{pollGlobalSales();pollTensorSales();pollNewMints();},12000);
