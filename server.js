@@ -1674,7 +1674,9 @@ async function resolveTensorCollectionForBid(slug) {
   return collection;
 }
 async function fetchBidMarketSnapshot(rule) {
-  const collection = await resolveTensorCollectionForBid(rule.collectionSlug);
+  const collection = rule.collectionUuid
+    ? { collId: rule.collectionUuid, symbol: rule.collectionSlug, name: rule.collectionName }
+    : await resolveTensorCollectionForBid(rule.collectionSlug);
   const route = rule.bidType === "trait" ? "/collections/trait_bids" : "/collections/coll_bids";
   const query = new URLSearchParams({ collId: collection.collId, limit: rule.bidType === "trait" ? "100" : "50" });
   const payload = await tensorApiGet(route + "?" + query.toString());
