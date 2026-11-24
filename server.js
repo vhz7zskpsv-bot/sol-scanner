@@ -659,11 +659,12 @@ function decodeTensorCoreListData(encoded) {
     return value;
   };
   readOption(8); // expiry
-  readOption(32); // currency; non-SOL listings are rejected below
+  const currency = readOption(32);
   const privateTaker = readOption(32);
   const makerBroker = readOption(32);
   return {
     amount,
+    currency: currency ? encodeBase58(currency) : null,
     privateTaker: privateTaker ? encodeBase58(privateTaker) : null,
     makerBroker: makerBroker ? encodeBase58(makerBroker) : null
   };
@@ -690,6 +691,7 @@ async function findActiveTensorCoreListing(rpc, tensor, mintAddress, mint) {
       const accounts = (ix.accounts || []).map(a => typeof a === "string" ? a : a.pubkey);
       if (!accounts.includes(listStateAddress) || !accounts.includes(mint)) continue;
       if (listing.privateTaker) throw new Error("This Core listing is private-taker restricted; safe public simulation is refused.");
+      if (listing.currency) throw new Error("This Core listing uses a non-SOL currency; this dry-run only supports SOL listings.");
       if (listing.amount <= 0n) throw new Error("Core listing contains an invalid price.");
       if (listing.amount > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Core listing price exceeds safe numeric range.");
       return {
