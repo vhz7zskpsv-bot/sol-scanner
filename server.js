@@ -1533,17 +1533,18 @@ function normalizeBidRules(input) {
     const traitName = String(rule.traitName || "").trim().slice(0, 120);
     const traitValue = String(rule.traitValue || "").trim().slice(0, 160);
     if (bidType === "trait" && (!traitName || !traitValue)) throw new Error("Trait bids require both a trait name and value.");
-    const whitelistAddress = String(rule.whitelistAddress || "").trim();
-    if (whitelistAddress && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(whitelistAddress)) throw new Error("Tensor whitelist address must be a valid Solana public key.");
+    const collectionUuid = String(rule.collectionUuid || "").trim().replaceAll("-", "").toLowerCase();
+    if (collectionUuid && !/^[0-9a-f]{32}$/.test(collectionUuid)) throw new Error("Tensor collection UUID must be a valid 32-character UUID.");
     return {
       id: String(rule.id || crypto.randomUUID()).slice(0, 80),
       marketplace: "Tensor",
       collectionSlug,
       collectionName,
+      collectionUuid,
       bidType,
       traitName: bidType === "trait" ? traitName : "",
       traitValue: bidType === "trait" ? traitValue : "",
-      whitelistAddress: String(rule.whitelistAddress || "").trim(),
+      whitelistAddress: "",
       startBidSol,
       maxBidSol,
       incrementSol,
@@ -1618,6 +1619,49 @@ function bidOwner(row) {
 const bidMarketCache = new Map();
 let bidMonitorLastAt = null;
 let bidMonitorLastError = null;
+const TENSOR_WHITELIST_PROGRAM = "TL1ST2iRBzuGTqLn1KXnGdSnEow62BzPnGiqyRXhWtW";
+function normalizeTensorUuid(value) {
+  const uuid = String(value || "").trim().replaceAll("-", "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(uuid)) throw new Error("Paste a valid Tensor collection UUID or Tensor collection link.");
+  return uuid;
+}
+async function deriveAndVerifyTensorWhitelist(uuidInput) {
+  const uuid = normalizeTensorUuid(uuidInput);
+  const whitelistSdk = await import("@tensor-foundation/whitelist");
+  if (typeof whitelistSdk.findWhitelistPda !== "function") throw new Error("Tensor whitelist SDK does not expose findWhitelistPda.");
+  const [pda] = await whitelistSdk.findWhitelistPda({ uuid: Array.from(Buffer.from(uuid, "hex")) });
+  const address = String(pda);
+  const account = await heliusRpc("getAccountInfo", [address, { encoding: "base64", commitment: "confirmed" }]);
+  if (!account?.value) throw new Error("No on-chain Tensor whitelist account exists for this collection UUID.");
+  if (account.value.owner !== TENSOR_WHITELIST_PROGRAM) throw new Error("Derived address is not owned by the official Tensor whitelist program; refusing to use it.");
+  return { collectionUuid: uuid, whitelistAddress: address };
+}
+app.post("/api/bids/resolve-collection", async (req, res) => {
+  try {
+    const input = String(req.body?.collectionInput || "").trim();
+    if (!input) return res.status(400).json({ error: "Paste a Tensor collection link or UUID." });
+    let uuid = "", slug = "";
+    const uuidCandidate = input.replace(/^uuid:/i, "").trim();
+    if (/^[0-9a-fA-F-]{32,36}$/.test(uuidCandidate)) uuid = normalizeTensorUuid(uuidCandidate);
+    else {
+      let parsed;
+      try { parsed = new URL(input); } catch { throw new Error("Collection input must be a Tensor trade URL or a UUID."); }
+      if (parsed.hostname !== "tensor.trade" && parsed.hostname !== "www.tensor.trade") throw new Error("Only Tensor collection links are supported.");
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (parts[0] !== "trade" || !parts[1]) throw new Error("Paste a Tensor collection link in /trade/<collection> format.");
+      slug = parts[1].slice(0, 160);
+      const raw = await tensorApiGet("/collections/find?query=" + encodeURIComponent(slug));
+      const candidates = Array.isArray(raw) ? raw : (raw.collections || raw.results || (raw.collection ? [raw.collection] : []));
+      const match = candidates.find(c => c.slugDisplay === slug || c.slugMe === slug || c.symbol === slug) || candidates[0];
+      if (!match?.collId) throw new Error("Tensor API did not return a collection UUID for this link. Try pasting its UUID directly.");
+      uuid = normalizeTensorUuid(match.collId);
+    }
+    const verified = await deriveAndVerifyTensorWhitelist(uuid);
+    res.json({ ok: true, ...verified, collectionSlug: slug || "uuid-" + uuid.slice(0, 8), collectionName: slug || "Tensor collection", verifiedOnChain: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Could not resolve Tensor collection." });
+  }
+});
 async function resolveTensorCollectionForBid(slug) {
   const cached = tensorCollectionCache.get("tensor:" + slug);
   if (cached?.collection?.collId) return cached.collection;
@@ -1704,7 +1748,8 @@ app.post("/api/bids/simulate", requireSniperRulesSession, async (req, res) => {
     const rule = persistedBidRules.find(item => item.id === ruleId);
     if (!rule) return res.status(404).json({ error: "Saved bid rule was not found." });
     if (!rule.enabled) return res.status(400).json({ error: "Turn this bid rule on before simulation." });
-    if (!rule.whitelistAddress) return res.status(400).json({ error: "Add the Tensor whitelist address for this collection or trait target first." });
+    if (!rule.collectionUuid) return res.status(400).json({ error: "This saved rule has no verified Tensor collection UUID. Re-save it using the collection link or UUID field." });
+    const verifiedWhitelist = await deriveAndVerifyTensorWhitelist(rule.collectionUuid);
     const amountSol = Number(req.body?.amountSol ?? rule.startBidSol);
     if (!Number.isFinite(amountSol) || amountSol < rule.startBidSol || amountSol > rule.maxBidSol) {
       return res.status(400).json({ error: "Simulation amount must be between the rule starting bid and maximum bid." });
@@ -1730,7 +1775,7 @@ app.post("/api/bids/simulate", requireSniperRulesSession, async (req, res) => {
     }
     const signer = await web3.createKeyPairSignerFromBytes(new Uint8Array(secret64), false);
     if (signer.address !== EXPECTED_SNIPER_WALLET) throw new Error("SDK signer address does not match the configured dedicated wallet.");
-    const targetAddress = web3.address(rule.whitelistAddress);
+    const targetAddress = web3.address(verifiedWhitelist.whitelistAddress);
     const amountLamports = BigInt(Math.round(amountSol * 1e9));
     const instruction = await marketplace.getBidInstructionAsync({
       owner: signer,
@@ -1766,7 +1811,7 @@ app.post("/api/bids/simulate", requireSniperRulesSession, async (req, res) => {
     if (value.err) throw new Error("Tensor bid simulation failed: " + JSON.stringify(value.err));
     res.json({
       ok: true, simulated: true, submitted: false, signedForSubmission: false,
-      ruleId: rule.id, bidType: rule.bidType, targetAddress: rule.whitelistAddress,
+      ruleId: rule.id, bidType: rule.bidType, targetAddress: verifiedWhitelist.whitelistAddress,
       amountSol, amountLamports: amountLamports.toString(), quantity: 1,
       signer: signer.address, programAddress: instruction.programAddress, instructionCount: 1,
       unitsConsumed: value.unitsConsumed ?? null,
