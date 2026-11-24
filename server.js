@@ -206,6 +206,7 @@ const sol = (value) => {
 };
 
 const sales = new Map();
+const globalMagicEdenSales = new Map();
 const magicEdenSeenSignatures = new Set();
 const MAGIC_EDEN_PROGRAMS = [
   "M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K",
@@ -351,12 +352,12 @@ async function pollMagicEdenSales() {
         const mint = first.mint || first.assetId || "";
         const collection = first.collection || nft.collection || {};
         const signature = tx.signature;
-        if (!signature || sales.has(signature) || !Number.isFinite(amount) || amount <= 0 ||
+        if (!signature || globalMagicEdenSales.has(signature) || !Number.isFinite(amount) || amount <= 0 ||
             !Number.isFinite(timestamp) || timestamp <= 0) continue;
         const price = amount > 100000 ? amount / 1e9 : amount;
         const symbol = String(collection.symbol || collection.name || "Magic Eden");
         tracked.add(symbol);
-        sales.set(signature, {
+        globalMagicEdenSales.set(signature, {
           id: signature, symbol, collection: collection.name || symbol,
           mint, time: timestamp * 1000, price, marketplace: "Magic Eden",
           signature, source: "Helius parsed on-chain Magic Eden sale"
@@ -367,7 +368,7 @@ async function pollMagicEdenSales() {
       magicEdenSeenSignatures.delete(magicEdenSeenSignatures.values().next().value);
     }
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-    for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
+    for (const [id, sale] of globalMagicEdenSales) if (sale.time < cutoff) globalMagicEdenSales.delete(id);
     magicEdenLastPollAt = new Date().toISOString();
     magicEdenPollError = null;
   } catch (error) {
@@ -1220,7 +1221,7 @@ app.get("/api/volume", (_req, res) => {
 
 app.get("/api/live-sales", (_req, res) => {
   res.json({
-    sales: [...sales.values()].sort((a, b) => b.time - a.time).slice(0, 100),
+    sales: [...globalMagicEdenSales.values()].sort((a, b) => b.time - a.time).slice(0, 100),
     source: "Magic Eden on-chain program monitoring via Helius",
     lastPollAt: magicEdenLastPollAt,
     warning: magicEdenPollError,
