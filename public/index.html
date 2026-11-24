@@ -48,7 +48,7 @@
     <div id="customTipWrap" hidden><label class="metric-label" for="customJitoTip">Custom Jito tip (SOL)</label><input class="sniper-input" id="customJitoTip" type="number" min="0" step="0.0001" placeholder="0.002"></div>
     <div class="wallet-status"><b id="walletStatus">Sniper wallet not connected</b><div class="sniper-note" id="walletAddress">Connect a separate wallet with limited funds. Your main wallet stays separate.</div></div>
     <button class="sniper-action" id="connectWallet" type="button">Connect Phantom / Solflare</button>
-    <div class="wallet-status"><label class="metric-label" for="sniperTestMint">Tensor NFT mint · legacy listing dry-run</label><input class="sniper-input" id="sniperTestMint" type="text" placeholder="Paste NFT mint address"><button class="sniper-action" id="simulateTensorListing" type="button">Simulate buy · NO SOL SPENT</button><div class="sniper-note" id="sniperSimulationResult">Tests one public Tensor legacy listing against an enabled collection rule. No transaction is signed or submitted.</div></div>
+    <div class="wallet-status"><label class="metric-label" for="sniperTestMint">Tensor NFT mint · legacy listing dry-run</label><input class="sniper-input" id="sniperTestMint" type="text" placeholder="Paste NFT mint address"><button class="sniper-action" id="simulateTensorListing" type="button">Legacy NFT dry-run · NO SOL</button><button class="sniper-action" id="simulateTensorCore" type="button">Metaplex Core dry-run · NO SOL</button><div class="sniper-note" id="sniperSimulationResult">Choose the NFT standard matching the asset. Both tests are unsigned simulations only; no transaction is signed or submitted.</div></div>
     <div class="wallet-status"><b>Auto-Buy: locked until secure signer setup</b><div class="sniper-note">Your collection, trait, price, budget and tip settings can be prepared here. Unattended purchases are not enabled yet; wallet connection alone cannot safely authorize background signing.</div></div>
     <button class="sniper-action" id="saveSniperRules" type="button">OK · Enable this collection rule</button>
     <div class="sniper-note" style="margin-top:12px">Your collection rules are saved to Railway cloud storage after signing with your dedicated sniper wallet. Rule ON does not activate purchases.</div>
@@ -418,7 +418,31 @@ async function syncSniperRulesFromCloud(){
   if(!response.ok)throw new Error(data.error||"Could not load cloud rules.");
   const localRules=readSniperRules();
   if(Array.isArray(data.rules)&&data.rules.length){
-    writeSniperRules(data.rules);renderSniperRules();
+    writeSniperRules(data.rules);
+$("simulateTensorCore").addEventListener("click",async()=>{
+  const mint=$("sniperTestMint").value.trim();
+  const output=$("sniperSimulationResult");
+  if(!mint){output.textContent="Paste the NFT asset address first.";return}
+  if(!sniperWalletProvider||!connectedSniperWallet){output.textContent="Connect the dedicated sniper wallet first.";return}
+  const button=$("simulateTensorCore");
+  button.disabled=true;
+  output.textContent="Checking Core listing, seller, royalty and unsigned transaction simulation…";
+  try{
+    if(!sniperRulesSession)await syncSniperRulesFromCloud();
+    let response=await fetch("/api/sniper/tensor/simulate-core",{method:"POST",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({mint})});
+    if(response.status===401){
+      sniperRulesSession=null;
+      await syncSniperRulesFromCloud();
+      response=await fetch("/api/sniper/tensor/simulate-core",{method:"POST",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({mint})});
+    }
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Tensor Core simulation failed.");
+    output.textContent=(data.simulationPassed?"CORE SIMULATION PASSED":"CORE SIMULATION FAILED")+" · "+data.collectionSymbol+" · Listing "+Number(data.listingPriceSol).toFixed(6)+" SOL · Estimated total "+Number(data.estimatedTotalSol).toFixed(6)+" SOL (royalty "+Number(data.estimatedRoyaltySol).toFixed(6)+" + Tensor fee "+Number(data.estimatedTensorFeeSol).toFixed(6)+") · "+(data.unitsConsumed??"N/A")+" CU. No signature, submission or SOL spend.";
+  }catch(error){output.textContent=String(error.message||error)}
+  finally{button.disabled=false}
+});
+
+renderSniperRules();
   }else if(localRules.length){
     const saved=await fetch("/api/sniper/rules",{method:"PUT",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({rules:localRules})});
     const savedData=await saved.json();
