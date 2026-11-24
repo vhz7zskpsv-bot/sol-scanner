@@ -487,13 +487,17 @@ function getSniperExecutionReadiness() {
 
 
 async function simulateTensorLegacyListing(mint) {
+  let stage = "initialization";
+  try {
   if (!getSniperSignerStatus().signerConfigured) throw new Error("Dedicated sniper signer is not verified.");
   if (!HELIUS_RPC) throw new Error("Solana RPC is not configured.");
 
+  stage = "loading SDK modules";
   const web3 = require("@solana/web3.js");
   const tensor = require("@tensor-foundation/marketplace");
   const common = require("@tensor-foundation/common-helpers");
   const resolvers = require("@tensor-foundation/resolvers");
+  stage = "loading dedicated signer";
   const secret = signerKeyBytes(process.env.SNIPER_WALLET_PRIVATE_KEY);
   const seed = secret.subarray(0, 32);
   const publicKey = deriveEd25519PublicKey(seed);
@@ -501,9 +505,12 @@ async function simulateTensorLegacyListing(mint) {
   const signer = await web3.createKeyPairSignerFromBytes(new Uint8Array(secret64), false);
   if (signer.address !== EXPECTED_SNIPER_WALLET) throw new Error("SDK signer address does not match the configured sniper wallet.");
 
+  stage = "validating NFT mint";
   const mintAddress = web3.address(mint);
   const rpc = web3.createSolanaRpc(HELIUS_RPC);
+  stage = "looking up Tensor listing account";
   const [listStateAddress] = await tensor.findListStatePda({ mint: mintAddress });
+  stage = "fetching Tensor listing account";
   const listState = await tensor.fetchMaybeListState(rpc, listStateAddress);
   if (!listState || !listState.data) {
     throw new Error("No active Tensor legacy listing exists for this NFT mint. List the NFT on Tensor first, then retry the dry-run.");
@@ -522,7 +529,9 @@ async function simulateTensorLegacyListing(mint) {
   const priceSol = priceLamports / 1_000_000_000;
   if (priceSol > 0.02) throw new Error("Listing price exceeds your 0.02 SOL maximum.");
 
+  stage = "deriving NFT metadata account";
   const [metadataPda] = await resolvers.findMetadataPda({ mint: mintAddress });
+  stage = "fetching NFT metadata";
   const metadata = await common.fetchMetadata(rpc, metadataPda);
   if (!metadata || !metadata.data) {
     throw new Error("NFT metadata was not found on-chain for this mint. Verify the NFT mint address and metadata account.");
@@ -543,6 +552,7 @@ async function simulateTensorLegacyListing(mint) {
 
   const creators = (metadata?.data?.creators || []).map(creator => creator.address);
   const ruleSet = metadata?.programmableConfig?.ruleSet ?? undefined;
+  stage = "building unsigned Tensor buy instruction";
   const buyIx = await tensor.getBuyLegacyInstructionAsync({
     payer: signer,
     owner,
@@ -558,6 +568,7 @@ async function simulateTensorLegacyListing(mint) {
 
   // Tensor's helper compiles an unsigned v0 message and calls simulateTransaction
   // with sigVerify=false. It does not sign or submit the transaction.
+  stage = "simulating unsigned transaction";
   const simulation = await common.simulateTxWithIxs(rpc, [buyIx], signer);
   const value = simulation?.value || {};
   return {
@@ -576,6 +587,10 @@ async function simulateTensorLegacyListing(mint) {
     solSpent: false,
     note: "Unsigned simulation only. No signature, network submission, Jito tip, or SOL spend. Exact total fees must be verified before any live purchase."
   };
+  } catch (error) {
+    const detail = String(error?.message || error || "unknown error").slice(0, 180);
+    throw new Error("Dry-run failed during " + stage + ": " + detail);
+  }
 }
 
 app.post("/api/sniper/tensor/simulate-legacy", requireSniperRulesSession, async (req, res) => {
