@@ -426,12 +426,16 @@ function getSniperExecutionReadiness() {
   const signer = getSniperSignerStatus();
   let solanaWeb3Installed = false;
   try { require.resolve("@solana/web3.js"); solanaWeb3Installed = true; } catch {}
-  const tensorKeyConfigured = Boolean(process.env.TENSOR_API_KEY);
-  const magicEdenKeyConfigured = Boolean(process.env.MAGIC_EDEN_API_KEY);
+  let tensorSwapSdkInstalled = false;
+  let tensorCompressedSdkInstalled = false;
+  try { require.resolve("@tensor-oss/tensorswap-sdk"); tensorSwapSdkInstalled = true; } catch {}
+  try { require.resolve("@tensor-oss/tcomp-sdk"); tensorCompressedSdkInstalled = true; } catch {}
+  const magicEdenInstructionKeyConfigured = Boolean(process.env.MAGIC_EDEN_API_KEY);
   const checks = {
     dedicatedWalletSignerVerified: signer.signerConfigured,
-    tensorBuyApiCredentialConfigured: tensorKeyConfigured,
-    magicEdenBuyInstructionCredentialConfigured: magicEdenKeyConfigured,
+    tensorLegacySdkInstalled: tensorSwapSdkInstalled,
+    tensorCompressedNftSdkInstalled: tensorCompressedSdkInstalled,
+    magicEdenInstructionApiKeyConfigured: magicEdenInstructionKeyConfigured,
     solanaRpcConfigured: Boolean(HELIUS_RPC),
     solanaTransactionLibraryInstalled: solanaWeb3Installed,
     transactionSimulationImplemented: false,
@@ -449,7 +453,7 @@ function getSniperExecutionReadiness() {
     walletAddress: signer.walletAddress,
     checks,
     blockers,
-    note: "This endpoint never creates, signs, or submits a transaction. Tensor buy transaction construction requires TENSOR_API_KEY; Magic Eden buy instruction endpoints require MAGIC_EDEN_API_KEY."
+    note: "This endpoint never creates, signs, or submits a transaction. Tensor documents public SDKs that do not require an API key; REST API access is separate. Magic Eden public read endpoints are free, but its instruction-generation endpoints require MAGIC_EDEN_API_KEY."
   };
 }
 
