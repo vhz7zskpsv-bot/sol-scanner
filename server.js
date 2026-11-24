@@ -52,7 +52,72 @@ const sol = (value) => {
 };
 
 const sales = new Map();
+const tensorSales = new Map();
+const tensorSeenSignatures = new Set();
+const TENSOR_PROGRAMS = [
+  "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp",
+  "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg"
+];
+let tensorLastPollAt = null;
+let tensorPollError = null;
 const tracked = new Set();
+
+async function pollTensorSales() {
+  if (!HELIUS_API_KEY) {
+    tensorPollError = "Helius API key is not configured";
+    return;
+  }
+  try {
+    const signatureGroups = await Promise.all(TENSOR_PROGRAMS.map(address =>
+      heliusRpc("getSignaturesForAddress", [address, { limit: 25, commitment: "confirmed" }])
+    ));
+    const fresh = signatureGroups.flat()
+      .filter(item => item.signature && !tensorSeenSignatures.has(item.signature))
+      .slice(0, 50);
+    if (fresh.length) {
+      const response = await fetch(
+        `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ transactions: fresh.map(item => item.signature) }),
+          signal: AbortSignal.timeout(15000)
+        }
+      );
+      if (!response.ok) throw new Error(`Helius transaction parser returned ${response.status}`);
+      const parsed = await response.json();
+      if (!Array.isArray(parsed)) throw new Error("Unexpected Helius parsed-transactions response");
+      for (const item of fresh) tensorSeenSignatures.add(item.signature);
+      for (const tx of parsed) {
+        if (String(tx.source || "").toUpperCase() !== "TENSOR" ||
+            String(tx.type || "").toUpperCase() !== "NFT_SALE") continue;
+        const nftEvent = tx.events?.nft;
+        const amountLamports = Number(nftEvent?.amount ?? nftEvent?.saleAmount);
+        const timestamp = Number(tx.timestamp || nftEvent?.timestamp);
+        if (!Number.isFinite(amountLamports) || amountLamports <= 0 ||
+            !Number.isFinite(timestamp) || timestamp <= 0) continue;
+        const id = tx.signature || nftEvent?.signature;
+        if (!id || tensorSales.has(id)) continue;
+        tensorSales.set(id, {
+          id, time: timestamp * 1000, price: amountLamports / 1e9,
+          source: "Helius parsed on-chain Tensor NFT sale"
+        });
+      }
+    }
+    while (tensorSeenSignatures.size > 5000) tensorSeenSignatures.delete(tensorSeenSignatures.values().next().value);
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [id, sale] of tensorSales) if (sale.time < cutoff) tensorSales.delete(id);
+    tensorLastPollAt = new Date().toISOString();
+    tensorPollError = null;
+  } catch (error) {
+    tensorPollError = error.message;
+  }
+}
+function tensorVolumeFor(minutes) {
+  const cutoff = Date.now() - minutes * 60 * 1000;
+  const recent = [...tensorSales.values()].filter(x => x.time >= cutoff);
+  return { sol: recent.reduce((sum, x) => sum + x.price, 0), sales: recent.length };
+}
 let lastPollAt = null;
 let pollError = null;
 
@@ -247,6 +312,16 @@ app.get("/api/volume", (_req, res) => {
   });
 });
 
+app.get("/api/tensor/volume", (_req, res) => {
+  res.json({
+    windows: { "5m": tensorVolumeFor(5), "15m": tensorVolumeFor(15), "1h": tensorVolumeFor(60) },
+    lastPollAt: tensorLastPollAt,
+    source: "Helius parsed on-chain Tensor Marketplace + AMM program sales",
+    note: "Only confirmed NFT_SALE transactions attributed to Tensor by Helius are counted; this is observed activity since polling began, not historical backfill.",
+    warning: tensorPollError
+  });
+});
+
 app.get("/api/collection/:symbol/stats", async (req, res) => {
   try {
     const stats = await meGet(`/collections/${encodeURIComponent(req.params.symbol)}/stats`);
@@ -297,6 +372,8 @@ app.listen(PORT, () => {
   console.log(`SOL SCANNER running on port ${PORT}`);
   pollSales();
   pollNewMints();
+  pollTensorSales();
   setInterval(pollSales, 60000);
   setInterval(pollNewMints, 30000);
+  setInterval(pollTensorSales, 60000);
 });
