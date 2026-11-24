@@ -149,18 +149,23 @@ async function pollSales() {
     const collections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 100);
     if (!collections.length) throw new Error("Magic Eden returned no collections to scan");
     const start = collectionPollCursor % collections.length;
-    const batch = Array.from({ length: Math.min(12, collections.length) }, (_, i) =>
+    const batch = Array.from({ length: Math.min(6, collections.length) }, (_, i) =>
       collections[(start + i) % collections.length]
     );
     collectionPollCursor = (start + batch.length) % collections.length;
-    const jobs = batch.map(async c => {
-      tracked.add(c.symbol);
-      const data = await meGet(`/collections/${encodeURIComponent(c.symbol)}/activities?offset=0&limit=50`);
-      const activities = Array.isArray(data) ? data : (data?.activities ?? data?.results ?? []);
-      activities.forEach(a => recordActivity(c.symbol, a));
-    });
-    const results = await Promise.allSettled(jobs);
-    const failed = results.filter(x => x.status === "rejected").length;
+    let failed = 0;
+    for (const c of batch) {
+      try {
+        tracked.add(c.symbol);
+        const data = await meGet(`/collections/${encodeURIComponent(c.symbol)}/activities?offset=0&limit=50`);
+        const activities = Array.isArray(data) ? data : (data?.activities ?? data?.results ?? []);
+        activities.forEach(a => recordActivity(c.symbol, a));
+      } catch {
+        failed++;
+      }
+      // Stay comfortably below Magic Eden's public API burst limit.
+      await new Promise(resolve => setTimeout(resolve, 600));
+    }
     pollError = failed ? `${failed} collection activity feeds unavailable in latest batch` : null;
     lastPollAt = new Date().toISOString();
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
@@ -395,7 +400,7 @@ app.listen(PORT, () => {
   pollSales();
   pollNewMints();
   pollTensorSales();
-  setInterval(pollSales, 15000);
+  setInterval(pollSales, 30000);
   setInterval(pollNewMints, 30000);
   setInterval(pollTensorSales, 60000);
 });
