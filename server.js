@@ -434,6 +434,32 @@ app.get("/api/collection/:symbol/stats", async (req, res) => {
   }
 });
 
+const collectionAttributesCache = new Map();
+const collectionAttributesBusy = new Map();
+app.get("/api/collection/:symbol/attributes", async (req, res) => {
+  const symbol = String(req.params.symbol || "").trim();
+  if (!symbol) return res.status(400).json({ attributes: [], error: "Collection symbol is required" });
+  const cached = collectionAttributesCache.get(symbol);
+  if (cached && Date.now() - cached.at < 15 * 60 * 1000) {
+    return res.json({ attributes: cached.attributes, source: "Magic Eden", cached: true });
+  }
+  try {
+    if (!collectionAttributesBusy.has(symbol)) {
+      const pending = meGet(`/collections/${encodeURIComponent(symbol)}/attributes`)
+        .then(raw => {
+          collectionAttributesCache.set(symbol, { attributes: raw, at: Date.now() });
+          return raw;
+        })
+        .finally(() => collectionAttributesBusy.delete(symbol));
+      collectionAttributesBusy.set(symbol, pending);
+    }
+    const attributes = await collectionAttributesBusy.get(symbol);
+    res.json({ attributes, source: "Magic Eden", cached: false });
+  } catch (error) {
+    res.status(502).json({ attributes: [], error: error.message, hint: "Magic Eden could not load this collection's traits. Try again shortly." });
+  }
+});
+
 app.get("/api/collection/:symbol/listings", async (req, res) => {
   try {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
@@ -455,27 +481,40 @@ app.get("/api/collection/:symbol/activities", async (req, res) => {
   }
 });
 
+let newCollectionsCache = null;
+let newCollectionsCacheAt = 0;
+let newCollectionsBusy = null;
 app.get("/api/new", async (_req, res) => {
   try {
-    // Only call a collection "recent" when the marketplace supplies a real creation timestamp.
-    const raw = await meGet("/collections?offset=0&limit=500");
-    const collections = (Array.isArray(raw) ? raw : [])
-      .filter(c => c.symbol && c.createdAt && Number.isFinite(new Date(c.createdAt).getTime()))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 20)
-      .map(c => ({
-        symbol: c.symbol,
-        name: c.name || c.symbol,
-        image: c.image || c.imageURI || "",
-        floorPrice: sol(c.floorPrice),
-        createdAt: c.createdAt,
-        verified: null
-      }));
-    res.json({
-      collections,
-      source: "Magic Eden",
-      note: "Sorted by marketplace creation timestamps when supplied; verification is not inferred."
-    });
+    if (newCollectionsCache && Date.now() - newCollectionsCacheAt < 10 * 60 * 1000) {
+      return res.json(newCollectionsCache);
+    }
+    if (!newCollectionsBusy) {
+      newCollectionsBusy = (async () => {
+        // Use marketplace creation timestamps only; never relabel active-sale collections as newly created.
+        const raw = await meGet("/collections?offset=0&limit=500");
+        const collections = (Array.isArray(raw) ? raw : [])
+          .filter(c => c.symbol && c.createdAt && Number.isFinite(new Date(c.createdAt).getTime()))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 20)
+          .map(c => ({
+            symbol: c.symbol,
+            name: c.name || c.symbol,
+            image: c.image || c.imageURI || "",
+            floorPrice: sol(c.floorPrice),
+            createdAt: c.createdAt,
+            verified: null
+          }));
+        newCollectionsCache = {
+          collections,
+          source: "Magic Eden",
+          note: "Only collections with marketplace creation timestamps are shown; this is not a complete launch feed."
+        };
+        newCollectionsCacheAt = Date.now();
+      })().finally(() => { newCollectionsBusy = null; });
+    }
+    await newCollectionsBusy;
+    res.json(newCollectionsCache || { collections: [], source: "Magic Eden" });
   } catch (error) {
     res.status(502).json({ collections: [], error: error.message });
   }
