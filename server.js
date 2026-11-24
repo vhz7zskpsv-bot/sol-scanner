@@ -461,6 +461,47 @@ app.get("/api/sniper/execution-readiness", (_req, res) => {
   res.json(getSniperExecutionReadiness());
 });
 
+app.get("/api/sniper/self-test", async (_req, res) => {
+  const signer = getSniperSignerStatus();
+  const result = {
+    mode: "read-only-self-test",
+    transactionsCreated: false,
+    transactionsSigned: false,
+    transactionsSubmitted: false,
+    walletAddress: signer.walletAddress,
+    checks: {
+      signerMatchesWallet: signer.signerConfigured,
+      rpcReachable: false,
+      walletBalanceReadable: false
+    },
+    balanceSol: null,
+    rpcVersion: null,
+    errors: []
+  };
+  if (!signer.signerConfigured) result.errors.push("sniper_signer_not_verified");
+  try {
+    const version = await heliusRpc("getVersion", []);
+    result.checks.rpcReachable = true;
+    result.rpcVersion = version?.["solana-core"] || null;
+  } catch (error) {
+    result.errors.push("rpc: " + String(error.message || "unavailable").slice(0, 180));
+  }
+  if (result.checks.rpcReachable) {
+    try {
+      const balance = await heliusRpc("getBalance", [signer.walletAddress, { commitment: "confirmed" }]);
+      const lamports = Number(balance?.value);
+      if (!Number.isFinite(lamports) || lamports < 0) throw new Error("invalid_balance_response");
+      result.checks.walletBalanceReadable = true;
+      result.balanceSol = lamports / 1_000_000_000;
+    } catch (error) {
+      result.errors.push("balance: " + String(error.message || "unavailable").slice(0, 180));
+    }
+  }
+  result.passed = Object.values(result.checks).every(Boolean);
+  result.note = "Read-only check only. No SOL can be spent by this endpoint.";
+  res.status(result.passed ? 200 : 503).json(result);
+});
+
 app.get("/api/sniper/status", async (_req, res) => {
   let storageMounted = false;
   try { await fs.access(SNIPER_DATA_DIR); storageMounted = true; }
