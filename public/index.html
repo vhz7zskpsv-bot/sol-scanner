@@ -36,6 +36,7 @@
     <input class="sniper-input" id="sniperCollectionSearch" type="search" placeholder="Search collection or paste Magic Eden / Tensor link…" autocomplete="off">
     <div class="search-results" id="sniperCollectionMatches"></div>
     <select class="sniper-select" id="sniperCollection" hidden><option value="">Select collection…</option></select>
+    <div style="margin-top:10px"><label class="metric-label" for="sniperCoreCollectionAddress">Core on-chain collection address (required only if Core metadata has no symbol)</label><input class="sniper-input" id="sniperCoreCollectionAddress" type="text" spellcheck="false" autocomplete="off" placeholder="Paste exact Metaplex Core collection address"><div class="sniper-note">This is the collection account address, not the NFT mint and not the marketplace URL.</div></div>
     <div class="sniper-fields">
       <div><label for="sniperTrait">Trait type</label><select class="sniper-select" id="sniperTrait" disabled><option value="">Select collection first…</option></select></div>
       <div><label>Trait values <span class="sniper-note">(select multiple)</span></label><div class="trait-value-list" id="sniperTraitValue"><div class="sniper-note">Select trait type first…</div></div><div class="trait-selected-count" id="sniperTraitValueCount">0 selected · any value</div></div>
@@ -463,7 +464,7 @@ async function persistSniperRules(rules){
 function renderSniperRules(){
   const rules=readSniperRules(),box=$("sniperRuleList");
   if(!rules.length){box.innerHTML='<div class="empty">No collection rules saved yet.</div>';return}
-  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
+  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+(r.collectionAddress?' · Core '+esc(r.collectionAddress.slice(0,6)+'…'+r.collectionAddress.slice(-4)):'')+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
 }
 $("sniperRuleList").addEventListener("click",async e=>{
   const toggle=e.target.closest("[data-rule-toggle]"),remove=e.target.closest("[data-rule-remove]");
@@ -481,7 +482,7 @@ $("saveSniperRules").addEventListener("click",async()=>{
   if(max<=0||budget<=0){$("sniperSaveStatus").textContent="Maximum price aur max total spend set karo.";return}
   const tip=$("jitoTip").value==="custom"?Number($("customJitoTip").value||0):Number($("jitoTip").value);
   const collection=collectionSearchMap.get(symbol)||rows.find(c=>c.symbol===symbol);
-  const rule={symbol,name:collection?.name||symbol,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,enabled:true,mode:"configuration-only",updatedAt:Date.now()};
+  const rule={symbol,collectionAddress:$("sniperCoreCollectionAddress").value.trim(),name:collection?.name||symbol,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,enabled:true,mode:"configuration-only",updatedAt:Date.now()};
   try{
     const rules=readSniperRules(),index=rules.findIndex(r=>r.symbol===symbol);
     if(index>=0)rules[index]=rule;else rules.push(rule);
