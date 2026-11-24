@@ -13,6 +13,9 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "@solana/web3.js": "^2.0.0",
+    "@tensor-foundation/marketplace": "1.0.0",
+    "@tensor-foundation/common-helpers": "1.0.0-beta.3"
   }
 }
