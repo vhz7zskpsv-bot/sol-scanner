@@ -13,7 +13,7 @@
 @media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}.section-grid{grid-template-columns:1fr}.hero{align-items:start;flex-direction:column}.wrap{padding:16px}}
 @media(max-width:430px){.grid{gap:8px}.card{padding:13px}.metric{font-size:20px}.wrap{padding:12px;max-width:100%;overflow:hidden}.top{margin-bottom:22px;align-items:flex-start}.brand{min-width:0}.brand h1{font-size:18px}.brand p{font-size:12px}.status{font-size:10px;max-width:46%;line-height:1.4}.hero h2{font-size:27px}.hero .sub{font-size:13px}.section-grid,.section-grid>*,.panel{min-width:0;max-width:100%}.table-wrap{margin:0 -4px;padding:0 4px}table{min-width:600px}.panel{padding:14px}.panel-head{gap:8px}.panel h3{font-size:15px}}
 
-.sniper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}.search-input,.sniper-input,.sniper-select{width:100%;background:#0d0a16;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:inherit;outline:none}.search-input:focus,.sniper-input:focus,.sniper-select:focus{border-color:var(--purple)}.search-results{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.search-result{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:20px;padding:7px 11px;cursor:pointer}.sniper-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sniper-fields label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.trait-value-list{max-height:190px;overflow:auto;background:#0d0a16;border:1px solid var(--line);border-radius:10px;padding:8px}.trait-value-option{display:flex;align-items:center;gap:9px;padding:7px 4px;color:var(--text);font-size:13px}.trait-value-option input{accent-color:#8f5bdf;width:16px;height:16px;flex:0 0 auto}.trait-selected-count{font-size:11px;color:var(--muted);margin-top:5px}.sniper-action{background:linear-gradient(135deg,#8f5bdf,#6543a8);color:white;border:0;border-radius:10px;padding:11px 15px;font-weight:700}.sniper-note{font-size:12px;color:var(--muted);line-height:1.5}.wallet-status{background:#19142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.sale-item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.sale-item:last-child{border:0}@media(max-width:650px){.sniper-grid{grid-template-columns:1fr}.sniper-fields{grid-template-columns:1fr 1fr}}
+.sniper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}.search-input,.sniper-input,.sniper-select{width:100%;background:#0d0a16;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:inherit;outline:none}.search-input:focus,.sniper-input:focus,.sniper-select:focus{border-color:var(--purple)}.search-results{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.search-result{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:20px;padding:7px 11px;cursor:pointer}.sniper-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sniper-fields label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.trait-value-list{max-height:190px;overflow:auto;background:#0d0a16;border:1px solid var(--line);border-radius:10px;padding:8px}.trait-value-option{display:flex;align-items:center;gap:9px;padding:7px 4px;color:var(--text);font-size:13px}.trait-value-option input{accent-color:#8f5bdf;width:16px;height:16px;flex:0 0 auto}.trait-selected-count{font-size:11px;color:var(--muted);margin-top:5px}.sniper-action{background:linear-gradient(135deg,#8f5bdf,#6543a8);color:white;border:0;border-radius:10px;padding:11px 15px;font-weight:700}.sniper-rule-list{display:grid;gap:8px;margin-top:12px}.sniper-rule{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px;background:#19142a;border:1px solid var(--line);border-radius:10px}.sniper-rule small{display:block;color:var(--muted);margin-top:4px}.sniper-rule-actions{display:flex;gap:6px;flex-wrap:wrap}.sniper-rule-actions button{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 9px}.sniper-rule-state{font-size:11px;color:#a88be8;font-weight:700}.sniper-note{font-size:12px;color:var(--muted);line-height:1.5}.wallet-status{background:#19142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.sale-item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.sale-item:last-child{border:0}@media(max-width:650px){.sniper-grid{grid-template-columns:1fr}.sniper-fields{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body><main class="wrap">
@@ -49,7 +49,9 @@
     <div class="wallet-status"><b id="walletStatus">Sniper wallet not connected</b><div class="sniper-note" id="walletAddress">Connect a separate wallet with limited funds. Your main wallet stays separate.</div></div>
     <button class="sniper-action" id="connectWallet" type="button">Connect Phantom wallet</button>
     <div class="wallet-status"><b>Auto-Buy: locked until secure signer setup</b><div class="sniper-note">Your collection, trait, price, budget and tip settings can be prepared here. Unattended purchases are not enabled yet; wallet connection alone cannot safely authorize background signing.</div></div>
-    <button class="sniper-action" id="saveSniperRules" type="button">Save sniper settings</button>
+    <button class="sniper-action" id="saveSniperRules" type="button">OK · Enable this collection rule</button>
+    <div class="sniper-note" style="margin-top:12px">Your collection rules are stored separately below. Rule ON means enabled in this browser; live listing monitoring and automatic purchases are not active yet.</div>
+    <div id="sniperRuleList" class="sniper-rule-list"><div class="empty">No collection rules saved yet.</div></div>
     <div class="sniper-note" id="sniperSaveStatus">Settings stay in this browser. Jito tip is separate from the network priority fee; a higher tip may help inclusion but cannot guarantee the fastest transaction.</div>
   </article>
 </section>
@@ -333,14 +335,40 @@ $("connectWallet").addEventListener("click",async()=>{
     $("connectWallet").textContent="Phantom connected";
   }catch(e){$("walletStatus").textContent="Wallet connection cancelled";$("walletAddress").textContent=String(e.message||e)}
 });
+const SNIPER_RULES_KEY="solScannerSniperRules";
+function readSniperRules(){
+  try{const raw=JSON.parse(localStorage.getItem(SNIPER_RULES_KEY)||"[]");return Array.isArray(raw)?raw:(raw&&raw.symbol?[{...raw,enabled:true}]:[])}catch{return []}
+}
+function writeSniperRules(rules){localStorage.setItem(SNIPER_RULES_KEY,JSON.stringify(rules))}
+function renderSniperRules(){
+  const rules=readSniperRules(),box=$("sniperRuleList");
+  if(!rules.length){box.innerHTML='<div class="empty">No collection rules saved yet.</div>';return}
+  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
+}
+$("sniperRuleList").addEventListener("click",e=>{
+  const toggle=e.target.closest("[data-rule-toggle]"),remove=e.target.closest("[data-rule-remove]");
+  const rules=readSniperRules();
+  if(toggle){const i=Number(toggle.dataset.ruleToggle);if(rules[i])rules[i].enabled=!rules[i].enabled}
+  if(remove){const i=Number(remove.dataset.ruleRemove);if(rules[i])rules.splice(i,1)}
+  try{writeSniperRules(rules);renderSniperRules()}catch{$("sniperSaveStatus").textContent="Could not update saved rules in this browser."}
+});
 $("saveSniperRules").addEventListener("click",()=>{
+  const symbol=$("sniperCollection").value;
+  if(!symbol){$("sniperSaveStatus").textContent="Pehle collection select karo.";return}
   const min=Number($("sniperMin").value||0),max=Number($("sniperMax").value||0),budget=Number($("sniperBudget").value||0);
   if(max>0&&min>max){$("sniperSaveStatus").textContent="Minimum price cannot be higher than maximum price.";return}
+  if(max<=0||budget<=0){$("sniperSaveStatus").textContent="Maximum price aur max total spend set karo.";return}
   const tip=$("jitoTip").value==="custom"?Number($("customJitoTip").value||0):Number($("jitoTip").value);
-  const rules={symbol:$("sniperCollection").value,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,mode:"configuration-only"};
-  try{localStorage.setItem("solScannerSniperRules",JSON.stringify(rules));$("sniperSaveStatus").textContent="Settings saved in this browser. Auto-buy remains locked until secure delegated signing is configured."}
-  catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
+  const collection=collectionSearchMap.get(symbol)||rows.find(c=>c.symbol===symbol);
+  const rule={symbol,name:collection?.name||symbol,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,enabled:true,mode:"configuration-only",updatedAt:Date.now()};
+  try{
+    const rules=readSniperRules(),index=rules.findIndex(r=>r.symbol===symbol);
+    if(index>=0)rules[index]=rule;else rules.push(rule);
+    writeSniperRules(rules);renderSniperRules();
+    $("sniperSaveStatus").textContent=rule.name+" rule saved and switched ON. Live monitoring/Auto-Buy is still locked pending the secure execution setup.";
+  }catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
 });
+renderSniperRules();
 
 renderSniperCollectionOptions();
 updateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
