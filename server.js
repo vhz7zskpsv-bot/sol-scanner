@@ -698,8 +698,10 @@ async function findActiveTensorCoreListing(rpc, tensor, mintAddress, mint) {
       if (listing.currency) throw new Error("This Core listing uses a non-SOL currency; this dry-run only supports SOL listings.");
       if (listing.amount <= 0n) throw new Error("Core listing contains an invalid price.");
       if (listing.amount > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Core listing price exceeds safe numeric range.");
+      const listingOwner = accounts[3];
+      if (!listingOwner) throw new Error("Tensor Core listCore instruction did not expose its owner account; refusing to infer the seller.");
       return {
-        listStateAddress, amount: listing.amount, makerBroker: listing.makerBroker,
+        listStateAddress, listingOwner, amount: listing.amount, makerBroker: listing.makerBroker,
         signature: entry.signature, accounts
       };
     }
@@ -739,12 +741,15 @@ async function simulateTensorCoreListing(mint) {
     stage = "verifying active Tensor Core listing and decoding its on-chain terms";
     const listing = await findActiveTensorCoreListing(rpc, tensor, mintAddress, mint);
 
-    const owner = String(asset.ownership?.owner || "");
-    if (!owner) throw new Error("Helius DAS did not return the current Core asset owner.");
-    const listIx = listing.accounts;
-    if (listIx[3] && listIx[3] !== owner) {
-      throw new Error("Tensor listing owner does not match the current Helius DAS asset owner; listing may be stale or transferred.");
+    const currentAssetOwner = String(asset.ownership?.owner || "");
+    if (!currentAssetOwner) throw new Error("Helius DAS did not return the current Core asset owner.");
+    // Tensor Core listings custody-transfer the asset to the list-state PDA.
+    // The seller remains the separate owner signer at listCore account index 3.
+    if (currentAssetOwner !== listing.listStateAddress) {
+      throw new Error("Helius DAS asset owner is not the Tensor listing-state PDA; the NFT may have been transferred out or the listing is no longer active.");
     }
+    const owner = listing.listingOwner;
+    if (!owner) throw new Error("Tensor Core listing seller could not be verified from the on-chain listCore instruction.");
     const collection = (asset.grouping || []).find(g => g.group_key === "collection")?.group_value || null;
     const symbol = String(asset.content?.metadata?.symbol || "").trim();
     if (!symbol) throw new Error("Core asset metadata has no collection symbol; refusing to guess which saved rule applies.");
