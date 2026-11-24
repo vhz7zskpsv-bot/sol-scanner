@@ -427,6 +427,24 @@ function getSniperExecutionReadiness() {
   const packageInstalled = (name) => {
     try { require.resolve(name); return true; } catch { return false; }
   };
+  const loadExports = (name) => {
+    try { return require(name); } catch { return null; }
+  };
+  const web3 = loadExports("@solana/web3.js");
+  const tensor = loadExports("@tensor-foundation/marketplace");
+  const common = loadExports("@tensor-foundation/common-helpers");
+  const resolvers = loadExports("@tensor-foundation/resolvers");
+  const tensorExports = {
+    createSolanaRpc: typeof web3?.createSolanaRpc === "function",
+    createKeyPairSignerFromBytes: typeof web3?.createKeyPairSignerFromBytes === "function",
+    findListStatePda: typeof tensor?.findListStatePda === "function",
+    fetchMaybeListState: typeof tensor?.fetchMaybeListState === "function",
+    getBuyLegacyInstructionAsync: typeof tensor?.getBuyLegacyInstructionAsync === "function",
+    getBuyCompressedInstructionAsync: typeof tensor?.getBuyCompressedInstructionAsync === "function",
+    fetchMetadata: typeof common?.fetchMetadata === "function",
+    simulateTxWithIxs: typeof common?.simulateTxWithIxs === "function",
+    findMetadataPda: typeof resolvers?.findMetadataPda === "function"
+  };
   const solanaWeb3Installed = packageInstalled("@solana/web3.js");
   const tensorMarketplaceSdkInstalled = packageInstalled("@tensor-foundation/marketplace");
   const tensorCommonHelpersInstalled = packageInstalled("@tensor-foundation/common-helpers");
@@ -442,6 +460,9 @@ function getSniperExecutionReadiness() {
     magicEdenInstructionApiKeyConfigured: magicEdenInstructionKeyConfigured,
     solanaRpcConfigured: Boolean(HELIUS_RPC),
     solanaTransactionLibraryInstalled: solanaWeb3Installed,
+    tensorLegacyBuyInstructionAvailable: tensorExports.getBuyLegacyInstructionAsync,
+    tensorCompressedBuyInstructionAvailable: tensorExports.getBuyCompressedInstructionAsync,
+    tensorTransactionSimulationHelperAvailable: tensorExports.simulateTxWithIxs,
     transactionSimulationImplemented: false,
     jitoBundleSubmissionImplemented: false,
     marketplaceBuyExecutorImplemented: false
@@ -456,8 +477,9 @@ function getSniperExecutionReadiness() {
     buyExecutorImplemented: false,
     walletAddress: signer.walletAddress,
     checks,
+    tensorExports,
     blockers,
-    note: "This endpoint never creates, signs, or submits a transaction. Tensor documents public SDKs that do not require an API key; REST API access is separate. Magic Eden public read endpoints are free, but its instruction-generation endpoints require MAGIC_EDEN_API_KEY."
+    note: "This endpoint only inspects installed SDK exports and configuration. It never creates, signs, or submits a transaction. Tensor SDK support is listing-standard-specific; Magic Eden instruction generation requires MAGIC_EDEN_API_KEY."
   };
 }
 
