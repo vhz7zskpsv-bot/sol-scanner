@@ -206,6 +206,14 @@ const sol = (value) => {
 };
 
 const sales = new Map();
+const magicEdenSeenSignatures = new Set();
+const MAGIC_EDEN_PROGRAMS = [
+  "M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K",
+  "mmm3XBJg5k8XJxEKBvdgptZz6SgK4tXvn36sodowMc"
+];
+let magicEdenLastPollAt = null;
+let magicEdenPollError = null;
+let magicEdenPollBusy = false;
 const tensorSales = new Map();
 const tensorSeenSignatures = new Set();
 const TENSOR_PROGRAMS = [
@@ -301,6 +309,74 @@ function recordActivity(symbol, a) {
   if (sales.has(id)) return;
   sales.set(id, { id, symbol, time, price });
 }
+async function pollMagicEdenSales() {
+  if (magicEdenPollBusy) return;
+  if (!HELIUS_API_KEY) {
+    magicEdenPollError = "HELIUS_API_KEY is not configured";
+    return;
+  }
+  magicEdenPollBusy = true;
+  try {
+    // Watch the Magic Eden V2 and MMM programs directly, rather than rotating
+    // through a truncated collection directory.
+    const groups = await Promise.all(MAGIC_EDEN_PROGRAMS.map(address =>
+      heliusRpc("getSignaturesForAddress", [address, { limit: 50, commitment: "confirmed" }])
+    ));
+    const fresh = groups.flat()
+      .filter(item => item?.signature && !magicEdenSeenSignatures.has(item.signature))
+      .slice(0, 100);
+    if (fresh.length) {
+      const response = await fetch(
+        `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ transactions: fresh.map(item => item.signature) }),
+          signal: AbortSignal.timeout(15000)
+        }
+      );
+      if (!response.ok) throw new Error(`Helius parsed-transactions returned ${response.status}`);
+      const parsed = await response.json();
+      if (!Array.isArray(parsed)) throw new Error("Unexpected Helius parsed-transactions response");
+      for (const item of fresh) magicEdenSeenSignatures.add(item.signature);
+      for (const tx of parsed) {
+        const source = String(tx.source || "").toUpperCase();
+        const type = String(tx.type || "").toUpperCase();
+        if (!source.includes("MAGIC_EDEN") || type !== "NFT_SALE") continue;
+        const nft = tx.events?.nft || {};
+        const amount = Number(nft.amount ?? nft.saleAmount);
+        const timestamp = Number(tx.timestamp || nft.timestamp);
+        const nfts = Array.isArray(nft.nfts) ? nft.nfts : [];
+        const first = nfts[0] || {};
+        const mint = first.mint || first.assetId || "";
+        const collection = first.collection || nft.collection || {};
+        const signature = tx.signature;
+        if (!signature || sales.has(signature) || !Number.isFinite(amount) || amount <= 0 ||
+            !Number.isFinite(timestamp) || timestamp <= 0) continue;
+        const price = amount > 100000 ? amount / 1e9 : amount;
+        const symbol = String(collection.symbol || collection.name || "Magic Eden");
+        tracked.add(symbol);
+        sales.set(signature, {
+          id: signature, symbol, collection: collection.name || symbol,
+          mint, time: timestamp * 1000, price, marketplace: "Magic Eden",
+          signature, source: "Helius parsed on-chain Magic Eden sale"
+        });
+      }
+    }
+    while (magicEdenSeenSignatures.size > 10000) {
+      magicEdenSeenSignatures.delete(magicEdenSeenSignatures.values().next().value);
+    }
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
+    magicEdenLastPollAt = new Date().toISOString();
+    magicEdenPollError = null;
+  } catch (error) {
+    magicEdenPollError = error.message;
+  } finally {
+    magicEdenPollBusy = false;
+  }
+}
+
 async function pollSales() {
   if (salesPollBusy) return;
   salesPollBusy = true;
@@ -1142,6 +1218,16 @@ app.get("/api/volume", (_req, res) => {
   });
 });
 
+app.get("/api/live-sales", (_req, res) => {
+  res.json({
+    sales: [...sales.values()].sort((a, b) => b.time - a.time).slice(0, 100),
+    source: "Magic Eden on-chain program monitoring via Helius",
+    lastPollAt: magicEdenLastPollAt,
+    warning: magicEdenPollError,
+    note: "Global program feed covers observed Magic Eden V2/MMM NFT_SALE transactions since monitoring began; it is not historical backfill and depends on Helius indexing."
+  });
+});
+
 app.get("/api/tensor/volume", (_req, res) => {
   res.json({
     windows: { "5m": tensorVolumeFor(5), "15m": tensorVolumeFor(15), "1h": tensorVolumeFor(60) },
@@ -1397,9 +1483,11 @@ app.listen(PORT, () => {
   console.log(`SOL SCANNER running on port ${PORT}`);
   loadPersistedSniperRules().then(rules => console.log(`Loaded ${rules.length} sniper rules from persistent volume`)).catch(error => { sniperRulesStorageError = error.message; console.error("Sniper rules volume unavailable:", error.message); });
   pollSales();
+  pollMagicEdenSales();
   pollNewMints();
   pollTensorSales();
   setInterval(pollSales, 6000);
+  setInterval(pollMagicEdenSales, 15000);
   setInterval(pollNewMints, 30000);
   setInterval(pollTensorSales, 60000);
 });
