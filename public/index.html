@@ -219,5 +219,7 @@ $("saveSniperRules").addEventListener("click",()=>{
   try{localStorage.setItem("solScannerSniperRules",JSON.stringify(rules));$("sniperSaveStatus").textContent="Settings saved in this browser. Auto-buy remains locked until secure delegated signing is configured."}
   catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
 });
-\nrenderSniperCollectionOptions();\nupdateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
+
+renderSniperCollectionOptions();
+updateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
 </script></body></html>
