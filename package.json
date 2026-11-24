@@ -1,8 +1,8 @@
 {
-  "name": "sol-scanner",
+  "name": "sol-nft-monitor",
   "version": "1.0.0",
   "private": true,
-  "description": "Mobile-friendly Solana NFT market scanner",
+  "description": "Read-only Solana NFT market monitor",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,10 +13,6 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "dotenv": "^16.4.7",
-    "@solana/web3.js": "^2.0.0",
-    "@tensor-foundation/marketplace": "1.0.0",
-    "@tensor-foundation/common-helpers": "1.0.0-beta.3",
-    "@tensor-foundation/whitelist": "1.0.0"
+    "dotenv": "^16.4.7"
   }
 }
