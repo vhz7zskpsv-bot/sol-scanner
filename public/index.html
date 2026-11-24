@@ -289,26 +289,38 @@ function renderTraitValues(){
 }
 async function loadSniperTraits(symbol){
   const type=$("sniperTrait"),value=$("sniperTraitValue"),hint=$("sniperTraitHint");
+  const coreAddress=$("sniperCoreCollectionAddress").value.trim();
   sniperTraitMap=new Map();
   type.disabled=true;
   type.innerHTML='<option value="">Loading collection traits…</option>';
   value.innerHTML='<div class="sniper-note">Select trait type first…</div>';
-  hint.textContent="Loading available traits from Magic Eden…";
+  hint.textContent=coreAddress?"Loading real Core NFT traits through Helius DAS…":"Loading available traits from Magic Eden…";
   if(!symbol){type.innerHTML='<option value="">Select collection first…</option>';hint.textContent="Choose a collection to load its available traits and values automatically.";return}
   try{
-    const data=await get("/api/collection/"+encodeURIComponent(symbol)+"/attributes");
+    let data;
+    if(coreAddress && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(coreAddress)){
+      data=await get("/api/core/collection/"+encodeURIComponent(coreAddress)+"/attributes");
+      hint.textContent="Source: Helius DAS · "+Number(data.assetCount||0)+" indexed Core NFTs"+(data.complete===false?" · partial index":"");
+    }else{
+      data=await get("/api/collection/"+encodeURIComponent(symbol)+"/attributes");
+    }
     sniperTraitMap=traitRowsFromResponse(data);
     const names=[...sniperTraitMap.keys()].sort((a,b)=>a.localeCompare(b));
     type.innerHTML='<option value="">Any trait</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
     type.disabled=!names.length;
     value.innerHTML='<div class="sniper-note">Select trait type first…</div>';
     updateTraitValueCount();
-    hint.textContent=names.length?names.length+" trait types loaded. Choose a trait, then tick one or more values. Any selected value can match.":"No trait metadata was returned for this collection.";
+    if(names.length) hint.textContent=(hint.textContent.startsWith("Source: Helius")?hint.textContent+" · ":"")+names.length+" trait types loaded. Choose a trait, then tick one or more values.";
+    else hint.textContent="No trait metadata was returned for this collection. Check the collection address and indexed asset metadata.";
   }catch(e){
     type.innerHTML='<option value="">Traits unavailable</option>';
     hint.textContent="Could not load traits: "+String(e.message||e);
   }
 }
+$("sniperCoreCollectionAddress").addEventListener("change",()=>{
+  const symbol=$("sniperCollection").value;
+  if(symbol)loadSniperTraits(symbol);
+});
 $("sniperTrait").addEventListener("change",renderTraitValues);
 $("sniperTraitValue").addEventListener("change",updateTraitValueCount);
 async function renderSniperCollectionMatches(){
