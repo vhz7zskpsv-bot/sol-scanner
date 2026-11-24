@@ -8,7 +8,14 @@ const PORT = Number(process.env.PORT || 8080);
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2";
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || "";
 const HELIUS_RPC = HELIUS_API_KEY ? "https://mainnet.helius-rpc.com/?api-key=" + encodeURIComponent(HELIUS_API_KEY) : "";
-const TOKEN_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+const NFT_MINT_PROGRAMS = [
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s", // Metaplex Token Metadata
+  "BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY", // Metaplex Bubblegum compressed NFTs
+  "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d", // Metaplex Core
+  "CndyV3LdqHUfDLmE5naZjVN8rBZz4tqhdefbAnjHG3JR", // Candy Machine v3
+  "CMACYFENjoBMHzapRXyo1JZkVS6EtaDDzkjMrmQLvr4J", // Core Candy Machine
+  "Guard1JwRhJkVH6XZhzoYxeBVQe872VH6QggF4BWmS9g", // Candy Guard
+];
 const MAGIC_EDEN_PROGRAMS = ["M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K", "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc"];
 const TENSOR_PROGRAMS = ["TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp", "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg"];
 const globalSales = new Map(), tensorSales = new Map(), globalActivities = new Map(), recentMints = new Map();
@@ -115,21 +122,53 @@ async function pollTensorSales() {
 async function pollNewMints() {
   if(mintBusy||!HELIUS_API_KEY)return;mintBusy=true;
   try{
-    const signatures=await heliusRpc("getSignaturesForAddress",[TOKEN_METADATA_PROGRAM,{limit:50,commitment:"confirmed"}]);
-    const fresh=(Array.isArray(signatures)?signatures:[]).filter(x=>x?.signature&&!seenMints.has(x.signature)).slice(0,50);
+    // Watch the main Solana NFT standards and their common mint controllers,
+    // not marketplace programs. This catches mints before any marketplace listing.
+    const groups=await Promise.all(NFT_MINT_PROGRAMS.map(address=>
+      heliusRpc("getSignaturesForAddress",[address,{limit:100,commitment:"confirmed"}])
+    ));
+    const signatures=groups.flat().filter(x=>x?.signature);
+    const unique=[...new Map(signatures.map(x=>[x.signature,x])).values()];
+    const fresh=unique.filter(x=>!seenMints.has(x.signature)).slice(0,150);
     if(fresh.length){
-      const parsed=await parseTransactions(fresh.map(x=>x.signature));fresh.forEach(x=>seenMints.add(x.signature));
+      const parsed=await parseTransactions(fresh.map(x=>x.signature));
+      fresh.forEach(x=>seenMints.add(x.signature));
       for(const tx of parsed){
-        const type=String(tx.type||"").toUpperCase();if(type!=="NFT_MINT"&&type!=="COMPRESSED_NFT_MINT")continue;
-        const nft=tx.events?.nft||{},items=Array.isArray(nft.nfts)?nft.nfts:[nft],compressed=[].concat(tx.events?.compressed||[]);
-        for(const asset of (type==="COMPRESSED_NFT_MINT"?compressed:items)){
-          const mint=asset.mint||asset.mintAddress||asset.assetId||asset.address;if(!mint||recentMints.has(mint))continue;
-          const metadata=asset.metadata||asset.content?.metadata||{};
-          recentMints.set(mint,{mint,name:asset.name||metadata.name||"New NFT mint",symbol:asset.symbol||metadata.symbol||"",collection:asset.collection?.name||asset.collectionName||"",signature:tx.signature||"",time:Number(tx.timestamp||Date.now()/1000)*1000,standard:type==="COMPRESSED_NFT_MINT"?"Compressed NFT":"NFT"});
+        const type=String(tx.type||"").toUpperCase();
+        const events=tx.events||{},nft=events.nft||{};
+        const ordinary=Array.isArray(nft.nfts)?nft.nfts:(Object.keys(nft).length?[nft]:[]);
+        const compressed=Array.isArray(events.compressed)?events.compressed:
+          (events.compressed&&typeof events.compressed==="object"?[events.compressed]:[]);
+        const isNftMint=type==="NFT_MINT"||type==="COMPRESSED_NFT_MINT"||
+          type==="CORE_ASSET_MINT"||type==="MPL_CORE_ASSET_MINT";
+        if(!isNftMint)continue;
+        const assets=[...ordinary,...compressed];
+        for(const item of assets){
+          const assetId=item.mint||item.mintAddress||item.assetId||item.asset_id||item.address||"";
+          if(!assetId||recentMints.has(assetId))continue;
+          let details=item,metadata=item.metadata||item.content?.metadata||{};
+          // Resolve DAS metadata for Core and compressed assets where the parsed event
+          // carries only an asset id/tree information.
+          try{
+            const das=await heliusRpc("getAsset",{id:assetId});
+            if(das)details=das;
+            metadata=das?.content?.metadata||metadata;
+          }catch{}
+          const grouping=Array.isArray(details.grouping)?details.grouping.find(x=>x.group_key==="collection"):null;
+          const collectionName=item.collection?.name||item.collectionName||grouping?.group_value||metadata.collection?.name||"";
+          const name=metadata.name||details.name||item.name||"New NFT mint";
+          const symbol=metadata.symbol||details.content?.metadata?.symbol||item.symbol||"";
+          const standard=type==="COMPRESSED_NFT_MINT"||compressed.includes(item)?"Compressed NFT":
+            (details.interface==="MplCoreAsset"?"Metaplex Core":"Metaplex NFT");
+          recentMints.set(assetId,{
+            mint:assetId,name,symbol,collection:collectionName,signature:tx.signature||"",
+            time:Number(tx.timestamp||Date.now()/1000)*1000,standard,
+            marketplace:"Solana"
+          });
         }
       }
     }
-    trimMap(seenMints,5000);trimMap(recentMints,150,Date.now()-24*60*60*1000);
+    trimMap(seenMints,20000);trimMap(recentMints,500,Date.now()-24*60*60*1000);
     mintLastPollAt=new Date().toISOString();mintPollError=null;
   }catch(error){mintPollError=error.message;}finally{mintBusy=false;}
 }
@@ -173,7 +212,7 @@ app.get("/api/collection/:symbol/listings",async(req,res)=>{
 });
 app.get("/api/live-sales",(_req,res)=>{const sales=[...globalSales.values(),...tensorSales.values()].sort((a,b)=>b.time-a.time).slice(0,100);res.json({sales,source:"Magic Eden + Tensor on-chain via Helius",lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,note:"Observed sales since this monitor started; not historical backfill. Tensor floor and bid quotes require Tensor API access."});});
 app.get("/api/live-feed",(_req,res)=>{const events=[...globalActivities.values()].sort((a,b)=>b.time-a.time).slice(0,500);res.json({events,source:"Helius parsed Magic Eden + Tensor marketplace program events",lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,note:"Observed events since monitor start; not a complete historical marketplace archive. Offers currently depend on Helius Magic Eden event classification."});});
-app.get("/api/new-mints",(_req,res)=>res.json({mints:[...recentMints.values()].sort((a,b)=>b.time-a.time),source:"Helius Mainnet",lastPollAt:mintLastPollAt,warning:mintPollError,note:"Only Helius-classified NFT mint transactions are shown; this is not a complete mint index."}));
+app.get("/api/new-mints",(_req,res)=>res.json({mints:[...recentMints.values()].sort((a,b)=>b.time-a.time),source:"Helius Mainnet · Metaplex Token Metadata, Bubblegum, Core and Candy Machine programs",lastPollAt:mintLastPollAt,warning:mintPollError,note:"Live program-based detection of standard Metaplex, compressed and Core NFT mints; not an exhaustive index of every custom NFT program on Solana."}));
 app.get("/api/collection-mints",async(req,res)=>{
   try{
     if(!req.query.refresh&&collectionMintCache&&Date.now()-collectionMintCacheAt<5*60*1000)return res.json(collectionMintCache);
