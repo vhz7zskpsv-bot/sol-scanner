@@ -751,8 +751,17 @@ async function simulateTensorCoreListing(mint) {
     const owner = listing.listingOwner;
     if (!owner) throw new Error("Tensor Core listing seller could not be verified from the on-chain listCore instruction.");
     const collection = (asset.grouping || []).find(g => g.group_key === "collection")?.group_value || null;
-    const symbol = String(asset.content?.metadata?.symbol || "").trim();
-    if (!symbol) throw new Error("Core asset metadata has no collection symbol; refusing to guess which saved rule applies.");
+    let symbol = String(asset.content?.metadata?.symbol || "").trim();
+    // Core asset metadata may omit the collection symbol. Resolve it from the
+    // DAS collection asset itself; never infer a symbol from the NFT name.
+    if (!symbol && collection) {
+      stage = "resolving Core collection metadata through Helius DAS";
+      const collectionAsset = await heliusRpc("getAsset", { id: collection });
+      if (collectionAsset && collectionAsset.interface === "MplCoreCollection") {
+        symbol = String(collectionAsset.content?.metadata?.symbol || "").trim();
+      }
+    }
+    if (!symbol) throw new Error("Helius DAS did not provide a verified symbol on the Core asset or its linked collection asset; refusing to guess which saved rule applies.");
     const matchingRule = persistedSniperRules.find(rule => rule.enabled && rule.symbol.toLowerCase() === symbol.toLowerCase());
     if (!matchingRule) throw new Error("No enabled sniper rule matches Core asset collection symbol " + symbol + ".");
     const attributes = asset.content?.metadata?.attributes || [];
