@@ -473,6 +473,7 @@ $("connectWallet").addEventListener("click",async()=>{
     $("connectWallet").textContent=provider.isSolflare?"Solflare connected":"Wallet connected";
     $("sniperSaveStatus").textContent="Approve the wallet message-signature request to load and sync your cloud rules…";
     await syncSniperRulesFromCloud();
+    await loadBidRules();
     $("sniperSaveStatus").textContent="Cloud rules loaded from Railway. Rule changes will sync automatically.";
   }catch(e){$("walletStatus").textContent="Wallet connection cancelled";$("walletAddress").textContent=String(e.message||e)}
 });
@@ -618,6 +619,7 @@ $("bidRuleList").addEventListener("click",async e=>{
 });
 
 renderSniperRules();
+refreshBidEngineStatus();
 
 renderSniperCollectionOptions();
 updateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
