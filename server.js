@@ -65,8 +65,10 @@ async function pollGlobalSales() {
         const nft=tx.events?.nft||{}, amount=Number(nft.amount??nft.saleAmount), timestamp=Number(tx.timestamp||nft.timestamp);
         const first=(Array.isArray(nft.nfts)?nft.nfts:[])[0]||{}, collection=first.collection||nft.collection||{}, signature=tx.signature;
         if(!signature||!Number.isFinite(amount)||amount<=0||!Number.isFinite(timestamp)||timestamp<=0)continue;
-        const symbol=String(collection.symbol||collection.name||"Magic Eden");
-        globalSales.set(signature,{id:signature,symbol,collection:collection.name||symbol,mint:first.mint||first.assetId||"",time:timestamp*1000,price:amount>100000?amount/1e9:amount,marketplace:"Magic Eden",signature});
+        const mint=first.mint||first.assetId||first.id||"", symbol=String(collection.symbol||collection.name||"Magic Eden");
+        let assetName=first.name||first.metadata?.name||first.content?.metadata?.name||"";
+        if(!assetName&&mint){try{const asset=await heliusRpc("getAsset",{id:mint});assetName=asset?.content?.metadata?.name||asset?.content?.metadata?.symbol||"";}catch{}}
+        globalSales.set(signature,{id:signature,name:assetName||"NFT",symbol,collection:collection.name||symbol,mint,time:timestamp*1000,price:amount>100000?amount/1e9:amount,marketplace:"Magic Eden",signature});
       }
     }
     trimMap(seenMagic,10000);trimMap(globalSales,500,Date.now()-12*60*60*1000);
@@ -116,7 +118,7 @@ function volumeWindow(map,minutes){
   const cutoff=Date.now()-minutes*60000,items=[...map.values()].filter(x=>x.time>=cutoff);
   return {sol:items.reduce((sum,x)=>sum+x.price,0),sales:items.length};
 }
-const windows=()=>({"5m":5,"15m":15,"1h":60,"4h":240,"6h":360,"12h":720});
+const windows=()=>({"5m":5,"10m":10,"15m":15,"1h":60,"4h":240,"6h":360,"12h":720});
 
 app.get("/api/health",(_req,res)=>res.json({ok:true,marketplace:"Magic Eden",helius:HELIUS_API_KEY?"configured":"missing",timestamp:new Date().toISOString(),lastPollAt:magicLastPollAt,warning:magicPollError}));
 app.get("/api/collections",async(_req,res)=>{
@@ -165,8 +167,9 @@ app.get("/api/collection-mints",async(req,res)=>{
           meGet("/collections/"+encodeURIComponent(c.symbol)+"/stats")
         ]);}catch{}
         const pick=(obj,keys)=>{for(const k of keys){const v=obj?.[k];if(v!==undefined&&v!==null&&v!==""){const n=Number(v);return Number.isFinite(n)?n:v;}}return null;};
-        const totalNfts=pick(detail,["size","maxSupply","max_supply","totalSupply","total_supply"])??pick(stats,["size","maxSupply","max_supply"]);
-        const minted=pick(stats,["minted","mintedCount","minted_count","supply","totalSupply","total_supply"])??pick(detail,["minted","mintedCount","minted_count","supply"]);
+        // Total cap and currently minted/indexed supply are separate source fields.
+        const totalNfts=pick(detail,["maxSupply","max_supply","totalSupply","total_supply","size"])??pick(stats,["maxSupply","max_supply","totalSupply","total_supply","size"]);
+        const minted=pick(detail,["totalItems","total_items","minted","mintedCount","minted_count"])??pick(stats,["totalItems","total_items","minted","mintedCount","minted_count","supply"]);
         const mintPrice=pick(detail,["mintPrice","mintPriceSol","mint_price","mint_price_sol"])??pick(stats,["mintPrice","mintPriceSol","mint_price","mint_price_sol"]);
         return {symbol:c.symbol,name:c.name||detail.name||c.symbol,image:c.image||detail.image||detail.imageURI||"",totalNfts,minted,mintPrice};
       }));
