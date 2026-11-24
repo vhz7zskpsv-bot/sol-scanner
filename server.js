@@ -537,10 +537,29 @@ async function simulateTensorLegacyListing(mint) {
     { encoding: "base64", commitment: "confirmed" }
   ]);
   if (!metadataAccountResult?.value) {
-    throw new Error("No Metaplex metadata account exists for this mint. Check that you entered the NFT mint address (not a token/collection address) and that the NFT has on-chain metadata.");
+    stage = "checking NFT through Helius DAS";
+    const asset = await heliusRpc("getAsset", { id: mint });
+    if (asset) {
+      const assetInterface = asset.interface || asset.content?.metadata?.token_standard || "unknown";
+      const assetName = asset.content?.metadata?.name || "unnamed asset";
+      throw new Error("NFT is indexed by Helius DAS (" + assetName + "; interface: " + assetInterface + ") but has no Metaplex Token Metadata PDA. It may be a Metaplex Core or compressed NFT; this legacy Tensor dry-run cannot process that standard.");
+    }
+    throw new Error("Helius DAS could not find this mint as an NFT asset, and no Metaplex metadata account exists. Verify the mint/asset ID and mainnet network.");
   }
   stage = "fetching NFT metadata";
-  const metadata = await common.fetchMetadata(rpc, metadataPda);
+  let metadata;
+  try {
+    metadata = await common.fetchMetadata(rpc, metadataPda);
+  } catch (metadataError) {
+    stage = "cross-checking NFT with Helius DAS";
+    const asset = await heliusRpc("getAsset", { id: mint });
+    if (asset) {
+      const assetInterface = asset.interface || asset.content?.metadata?.token_standard || "unknown";
+      const assetName = asset.content?.metadata?.name || "unnamed asset";
+      throw new Error("Helius DAS confirms asset " + assetName + " (interface: " + assetInterface + "), but Tensor's legacy metadata decoder failed: " + String(metadataError?.message || metadataError).slice(0, 100));
+    }
+    throw metadataError;
+  }
   if (!metadata || !metadata.data) {
     throw new Error("NFT metadata was not found on-chain for this mint. Verify the NFT mint address and metadata account.");
   }
