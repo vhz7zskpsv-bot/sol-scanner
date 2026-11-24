@@ -531,6 +531,14 @@ async function simulateTensorLegacyListing(mint) {
 
   stage = "deriving NFT metadata account";
   const [metadataPda] = await resolvers.findMetadataPda({ mint: mintAddress });
+  stage = "checking on-chain metadata account";
+  const metadataAccountResult = await heliusRpc("getAccountInfo", [
+    metadataPda,
+    { encoding: "base64", commitment: "confirmed" }
+  ]);
+  if (!metadataAccountResult?.value) {
+    throw new Error("No Metaplex metadata account exists for this mint. Check that you entered the NFT mint address (not a token/collection address) and that the NFT has on-chain metadata.");
+  }
   stage = "fetching NFT metadata";
   const metadata = await common.fetchMetadata(rpc, metadataPda);
   if (!metadata || !metadata.data) {
