@@ -296,22 +296,20 @@ let collectionsCacheAt = 0;
 let collectionDirectoryCache = null;
 let collectionDirectoryCacheAt = 0;
 let collectionDirectoryBusy = null;
+let collectionDirectoryError = null;
 app.get("/api/collections/search", async (req, res) => {
   try {
     const q = String(req.query.q || "").trim().toLowerCase();
     if (q.length < 1) return res.json({ collections: [], source: "Magic Eden collection directory" });
+
+    // Magic Eden's Solana v2 collections endpoint is paginated, not a fuzzy-search endpoint.
+    // Fetch one large page and cache it; never crawl thousands of pages per keystroke.
     if (!collectionDirectoryCache || Date.now() - collectionDirectoryCacheAt > 10 * 60 * 1000) {
       if (!collectionDirectoryBusy) {
         collectionDirectoryBusy = (async () => {
-          const all = [];
-          // Walk Magic Eden's offset-based collection directory, not just the recent-sale set.
-          for (let offset = 0; offset < 5000; offset += 100) {
-            const page = await meGet(`/collections?offset=${offset}&limit=100`);
-            const items = Array.isArray(page) ? page : [];
-            all.push(...items.filter(c => c && c.symbol));
-            if (items.length < 100) break;
-          }
-          collectionDirectoryCache = all.map(c => ({
+          const raw = await meGet("/collections?offset=0&limit=500");
+          const items = Array.isArray(raw) ? raw : [];
+          collectionDirectoryCache = items.filter(c => c && c.symbol).map(c => ({
             symbol: c.symbol,
             name: c.name || c.symbol || "Unnamed collection",
             image: c.image || c.imageURI || "",
@@ -323,16 +321,32 @@ app.get("/api/collections/search", async (req, res) => {
             source: "Magic Eden"
           }));
           collectionDirectoryCacheAt = Date.now();
-        })().finally(() => { collectionDirectoryBusy = null; });
+          collectionDirectoryError = null;
+        })().catch(error => {
+          collectionDirectoryError = error.message;
+          throw error;
+        }).finally(() => { collectionDirectoryBusy = null; });
       }
       await collectionDirectoryBusy;
     }
     const matches = (collectionDirectoryCache || []).filter(c =>
       (String(c.name) + " " + String(c.symbol)).toLowerCase().includes(q)
     ).slice(0, 30);
-    res.json({ collections: matches, source: "Magic Eden collection directory", indexed: collectionDirectoryCache?.length || 0 });
+    res.json({
+      collections: matches,
+      source: "Magic Eden collection directory",
+      indexed: collectionDirectoryCache?.length || 0,
+      note: "Search covers the cached first 500 Magic Eden collections, not every collection ever created."
+    });
   } catch (error) {
-    res.status(502).json({ collections: [], error: error.message, hint: "Magic Eden collection directory search failed." });
+    // Keep serving a warm cache if Magic Eden is temporarily rate-limiting requests.
+    if (collectionDirectoryCache?.length) {
+      const matches = collectionDirectoryCache.filter(c =>
+        (String(c.name) + " " + String(c.symbol)).toLowerCase().includes(String(req.query.q || "").trim().toLowerCase())
+      ).slice(0, 30);
+      return res.json({ collections: matches, source: "Magic Eden cached directory", indexed: collectionDirectoryCache.length, warning: error.message });
+    }
+    res.status(502).json({ collections: [], error: error.message, hint: "Magic Eden is rate-limiting collection search. Wait briefly and retry." });
   }
 });
 
