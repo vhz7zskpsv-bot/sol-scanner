@@ -505,8 +505,13 @@ async function simulateTensorLegacyListing(mint) {
   const rpc = web3.createSolanaRpc(HELIUS_RPC);
   const [listStateAddress] = await tensor.findListStatePda({ mint: mintAddress });
   const listState = await tensor.fetchMaybeListState(rpc, listStateAddress);
-  web3.assertAccountExists(listState);
+  if (!listState || !listState.data) {
+    throw new Error("No active Tensor legacy listing exists for this NFT mint. List the NFT on Tensor first, then retry the dry-run.");
+  }
   const { owner, amount, rentPayer, makerBroker, privateTaker, cosigner } = listState.data;
+  if (!owner || amount == null) {
+    throw new Error("Tensor listing account is incomplete; owner or listing price is missing.");
+  }
 
   if ((web3.isSome(privateTaker) && web3.unwrapOption(privateTaker) !== signer.address) || cosigner) {
     throw new Error("This Tensor listing is private or requires a cosigner; safe public SDK simulation is not supported.");
@@ -519,7 +524,16 @@ async function simulateTensorLegacyListing(mint) {
 
   const [metadataPda] = await resolvers.findMetadataPda({ mint: mintAddress });
   const metadata = await common.fetchMetadata(rpc, metadataPda);
-  const symbol = String(metadata?.data?.symbol || "").trim();
+  if (!metadata || !metadata.data) {
+    throw new Error("NFT metadata was not found on-chain for this mint. Verify the NFT mint address and metadata account.");
+  }
+  if (!metadata.tokenStandard) {
+    throw new Error("NFT token standard is missing or unsupported by this Tensor legacy dry-run.");
+  }
+  const symbol = String(metadata.data.symbol || "").trim();
+  if (!symbol) {
+    throw new Error("NFT collection symbol is missing from metadata, so its saved sniper rule cannot be matched.");
+  }
   const matchingRule = persistedSniperRules.find(rule => rule.enabled && rule.symbol.toLowerCase() === symbol.toLowerCase());
   if (!matchingRule) throw new Error("No enabled sniper rule matches this NFT collection symbol.");
   if (matchingRule.trait) throw new Error("This dry-run currently refuses trait-filtered rules until NFT attributes can be verified against the listing metadata.");
