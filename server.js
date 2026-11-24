@@ -1508,6 +1508,110 @@ app.get("/api/new", async (_req, res) => {
   }
 });
 
+
+// --- Dedicated Tensor bidding rules (separate from NFT buy-sniper) ---
+const BID_RULES_FILE = path.join(SNIPER_DATA_DIR, "bid-rules.json");
+let persistedBidRules = [];
+let bidRulesLoaded = false;
+let bidRulesStorageError = null;
+function normalizeBidRules(input) {
+  if (!Array.isArray(input) || input.length > 50) throw new Error("Bid rules must be an array with at most 50 entries.");
+  return input.map((rule) => {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) throw new Error("Invalid bid rule.");
+    const collectionSlug = String(rule.collectionSlug || "").trim().slice(0, 160);
+    const collectionName = String(rule.collectionName || collectionSlug).trim().slice(0, 160);
+    const bidType = String(rule.bidType || "collection").toLowerCase();
+    const startBidSol = Number(rule.startBidSol);
+    const maxBidSol = Number(rule.maxBidSol);
+    const incrementSol = Number(rule.incrementSol);
+    if (!collectionSlug || !/^[a-zA-Z0-9._-]{1,160}$/.test(collectionSlug)) throw new Error("Every bid rule needs a valid Tensor collection slug.");
+    if (!["collection", "trait"].includes(bidType)) throw new Error("Bid type must be collection or trait.");
+    if (![startBidSol, maxBidSol, incrementSol].every(Number.isFinite) ||
+        startBidSol <= 0 || maxBidSol < startBidSol || incrementSol <= 0 || maxBidSol > 100000) {
+      throw new Error("Enter valid starting bid, maximum bid, and positive bid increment.");
+    }
+    const traitName = String(rule.traitName || "").trim().slice(0, 120);
+    const traitValue = String(rule.traitValue || "").trim().slice(0, 160);
+    if (bidType === "trait" && (!traitName || !traitValue)) throw new Error("Trait bids require both a trait name and value.");
+    return {
+      id: String(rule.id || crypto.randomUUID()).slice(0, 80),
+      marketplace: "Tensor",
+      collectionSlug,
+      collectionName,
+      bidType,
+      traitName: bidType === "trait" ? traitName : "",
+      traitValue: bidType === "trait" ? traitValue : "",
+      startBidSol,
+      maxBidSol,
+      incrementSol,
+      autoOutbid: Boolean(rule.autoOutbid),
+      enabled: Boolean(rule.enabled),
+      executionMode: "locked",
+      createdAt: Number.isFinite(Number(rule.createdAt)) ? Number(rule.createdAt) : Date.now(),
+      updatedAt: Date.now()
+    };
+  });
+}
+async function loadPersistedBidRules() {
+  await fs.access(SNIPER_DATA_DIR);
+  try {
+    persistedBidRules = normalizeBidRules(JSON.parse(await fs.readFile(BID_RULES_FILE, "utf8")));
+  } catch (error) {
+    if (error.code === "ENOENT") persistedBidRules = [];
+    else throw error;
+  }
+  bidRulesLoaded = true;
+  bidRulesStorageError = null;
+  return persistedBidRules;
+}
+async function savePersistedBidRules(rules) {
+  const safe = normalizeBidRules(rules);
+  await fs.access(SNIPER_DATA_DIR);
+  const tmp = BID_RULES_FILE + ".tmp";
+  await fs.writeFile(tmp, JSON.stringify(safe, null, 2), { encoding: "utf8", mode: 0o600 });
+  await fs.rename(tmp, BID_RULES_FILE);
+  persistedBidRules = safe;
+  bidRulesLoaded = true;
+  bidRulesStorageError = null;
+  return safe;
+}
+app.get("/api/bids/status", async (_req, res) => {
+  let storageMounted = false;
+  try { await fs.access(SNIPER_DATA_DIR); storageMounted = true; } catch (error) { bidRulesStorageError = error.message; }
+  res.json({
+    marketplace: "Tensor",
+    apiKeyConfigured: Boolean(process.env.TENSOR_API_KEY),
+    storageMounted,
+    rulesLoaded: bidRulesLoaded,
+    savedRuleCount: bidRulesLoaded ? persistedBidRules.length : null,
+    executionEnabled: false,
+    autoOutbidEnabled: false,
+    transactionSigningEnabled: false,
+    warning: !process.env.TENSOR_API_KEY
+      ? "Tensor API key is not configured. Live bid lookup and transaction construction are unavailable."
+      : "Live execution remains locked until bid creation, escrow funding, cancellation, and transaction simulation are verified.",
+    storageError: bidRulesStorageError
+  });
+});
+app.get("/api/bids/rules", requireSniperRulesSession, async (_req, res) => {
+  try {
+    if (!bidRulesLoaded) await loadPersistedBidRules();
+    res.json({ rules: persistedBidRules, storage: "Railway persistent volume", executionEnabled: false });
+  } catch (error) {
+    bidRulesStorageError = error.message;
+    res.status(503).json({ error: "Persistent bid-rules storage is unavailable." });
+  }
+});
+app.put("/api/bids/rules", requireSniperRulesSession, async (req, res) => {
+  try {
+    const rules = await savePersistedBidRules(req.body?.rules);
+    res.json({ ok: true, rules, storage: "Railway persistent volume", executionEnabled: false });
+  } catch (error) {
+    bidRulesStorageError = error.message;
+    res.status(400).json({ error: error.message || "Could not save bid rules." });
+  }
+});
+
 app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 app.listen(PORT, () => {
