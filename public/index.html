@@ -12,6 +12,8 @@
 .collection-row{cursor:pointer}.collection-row:hover{background:#211936}.detail-modal{position:fixed;inset:0;z-index:50;background:#05040bd9;display:none;overflow:auto;padding:18px}.detail-modal.open{display:block}.detail-shell{max-width:1100px;margin:24px auto;background:#110d1d;border:1px solid var(--line);border-radius:18px;padding:20px}.detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.detail-close{background:#2b2140;color:white;border:1px solid var(--line);border-radius:9px;padding:9px 13px}.detail-tabs{display:flex;gap:8px;margin:18px 0}.detail-tabs button{background:#1b1529;color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:9px 13px}.detail-tabs button.active{background:#6543a8;color:white}.activity-filters{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 12px}.activity-filters button{background:#1b1529;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:7px 12px;font-size:12px}.activity-filters button.active{background:#6543a8;color:#fff;border-color:#6543a8}.nft-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px}.nft-card{background:#19142a;border:1px solid var(--line);border-radius:12px;overflow:hidden}.nft-card img{width:100%;aspect-ratio:1;object-fit:cover;background:#211936}.nft-card div{padding:10px}.nft-card strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-row{display:flex;justify-content:space-between;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap}.detail-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}.detail-stat{background:#19142a;border:1px solid var(--line);padding:12px;border-radius:10px}.detail-stat small{color:var(--muted);display:block}.detail-stat b{display:block;margin-top:5px}@media(max-width:600px){.detail-modal{padding:7px}.detail-shell{margin:7px auto;padding:13px}.detail-stats{grid-template-columns:repeat(2,1fr)}.nft-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}.section-grid{grid-template-columns:1fr}.hero{align-items:start;flex-direction:column}.wrap{padding:16px}}
 @media(max-width:430px){.grid{gap:8px}.card{padding:13px}.metric{font-size:20px}.wrap{padding:12px;max-width:100%;overflow:hidden}.top{margin-bottom:22px;align-items:flex-start}.brand{min-width:0}.brand h1{font-size:18px}.brand p{font-size:12px}.status{font-size:10px;max-width:46%;line-height:1.4}.hero h2{font-size:27px}.hero .sub{font-size:13px}.section-grid,.section-grid>*,.panel{min-width:0;max-width:100%}.table-wrap{margin:0 -4px;padding:0 4px}table{min-width:600px}.panel{padding:14px}.panel-head{gap:8px}.panel h3{font-size:15px}}
+
+.sniper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}.search-input,.sniper-input,.sniper-select{width:100%;background:#0d0a16;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:inherit;outline:none}.search-input:focus,.sniper-input:focus,.sniper-select:focus{border-color:var(--purple)}.search-results{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.search-result{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:20px;padding:7px 11px;cursor:pointer}.sniper-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sniper-fields label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.sniper-action{background:linear-gradient(135deg,#8f5bdf,#6543a8);color:white;border:0;border-radius:10px;padding:11px 15px;font-weight:700}.sniper-note{font-size:12px;color:var(--muted);line-height:1.5}.wallet-status{background:#19142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.sale-item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.sale-item:last-child{border:0}@media(max-width:650px){.sniper-grid{grid-template-columns:1fr}.sniper-fields{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body><main class="wrap">
@@ -19,7 +21,36 @@
 <section class="hero"><div><h2>Track. Discover. <span class="gradient">Stay Ahead.</span></h2><p class="sub">Live collection signals and marketplace activity</p></div><div class="filters" aria-label="Timeframe"><button class="active" data-window="5m">5m</button><button data-window="15m">15m</button><button data-window="1h">1h</button></div></section>
 <section class="grid"><article class="card"><div class="metric-label">Sales volume · 5m</div><div class="metric" id="v5">Not tracked</div><div class="muted" id="v5count">Observed sales since tracker started</div></article><article class="card"><div class="metric-label">Sales volume · 15m</div><div class="metric" id="v15">Not tracked</div><div class="muted" id="v15count">Observed sales since tracker started</div></article><article class="card"><div class="metric-label">Sales volume · 1h</div><div class="metric" id="v60">Not tracked</div><div class="muted" id="v60count">Observed sales since tracker started</div></article><article class="card"><div class="metric-label">Collections loaded</div><div class="metric" id="count">—</div><div class="muted">Marketplace collection list</div></article></section>
 <section class="grid" aria-label="Tensor on-chain volume"><article class="card"><div class="metric-label">Tensor volume · 5m</div><div class="metric" id="tv5">—</div><div class="muted" id="tv5count">Waiting for on-chain sales</div></article><article class="card"><div class="metric-label">Tensor volume · 15m</div><div class="metric" id="tv15">—</div><div class="muted" id="tv15count">Waiting for on-chain sales</div></article><article class="card"><div class="metric-label">Tensor volume · 1h</div><div class="metric" id="tv60">—</div><div class="muted" id="tv60count">Waiting for on-chain sales</div></article></section>
-<section class="section-grid"><article class="panel"><div class="panel-head"><h3>🏆 Top Collections</h3><span class="muted" id="source">Magic Eden</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>COLLECTION</th><th>FLOOR</th><th>HIGHEST BID</th><th id="volumeHeading">VOLUME · 5M</th></tr></thead><tbody id="collections"><tr><td colspan="5" class="empty">Loading collections…</td></tr></tbody></table></div></article>
+
+<section class="sniper-grid">
+  <article class="panel" id="liveSalesPanel">
+    <div class="panel-head"><h3>⚡ Live Sales Search</h3><span class="pill">MAGIC EDEN</span></div>
+    <input class="search-input" id="liveSaleSearch" type="search" placeholder="Search NFT collection…" autocomplete="off">
+    <div class="search-results" id="liveSaleMatches"></div>
+    <div class="sniper-note" id="liveSaleHint">Search a collection, then choose it to view its latest marketplace activity.</div>
+    <div id="liveSaleResults"><div class="empty">Choose a collection to load its latest activity.</div></div>
+  </article>
+  <article class="panel" id="sniperPanel">
+    <div class="panel-head"><h3>🎯 NFT Sniper</h3><span class="pill">SETUP</span></div>
+    <label class="metric-label" for="sniperCollection">Collection</label>
+    <select class="sniper-select" id="sniperCollection"><option value="">Select collection…</option></select>
+    <div class="sniper-fields">
+      <div><label for="sniperTrait">Trait type</label><input class="sniper-input" id="sniperTrait" placeholder="e.g. Background"></div>
+      <div><label for="sniperTraitValue">Trait value</label><input class="sniper-input" id="sniperTraitValue" placeholder="e.g. Gold"></div>
+      <div><label for="sniperMin">Minimum price (SOL)</label><input class="sniper-input" id="sniperMin" type="number" min="0" step="0.01" placeholder="0.5"></div>
+      <div><label for="sniperMax">Maximum price (SOL)</label><input class="sniper-input" id="sniperMax" type="number" min="0" step="0.01" placeholder="2"></div>
+      <div><label for="sniperBudget">Max total spend (SOL)</label><input class="sniper-input" id="sniperBudget" type="number" min="0" step="0.01" placeholder="3"></div>
+      <div><label for="jitoTip">Jito tip (SOL)</label><select class="sniper-select" id="jitoTip"><option value="0.0001">Low · 0.0001</option><option value="0.0005" selected>Medium · 0.0005</option><option value="0.001">High · 0.001</option><option value="custom">Custom</option></select></div>
+    </div>
+    <div id="customTipWrap" hidden><label class="metric-label" for="customJitoTip">Custom Jito tip (SOL)</label><input class="sniper-input" id="customJitoTip" type="number" min="0" step="0.0001" placeholder="0.002"></div>
+    <div class="wallet-status"><b id="walletStatus">Sniper wallet not connected</b><div class="sniper-note" id="walletAddress">Connect a separate wallet with limited funds. Your main wallet stays separate.</div></div>
+    <button class="sniper-action" id="connectWallet" type="button">Connect Phantom wallet</button>
+    <div class="wallet-status"><b>Auto-Buy: locked until secure signer setup</b><div class="sniper-note">Your collection, trait, price, budget and tip settings can be prepared here. Unattended purchases are not enabled yet; wallet connection alone cannot safely authorize background signing.</div></div>
+    <button class="sniper-action" id="saveSniperRules" type="button">Save sniper settings</button>
+    <div class="sniper-note" id="sniperSaveStatus">Settings stay in this browser. Jito tip is separate from the network priority fee; a higher tip may help inclusion but cannot guarantee the fastest transaction.</div>
+  </article>
+</section>
+\n<section class="section-grid"><article class="panel"><div class="panel-head"><h3>🏆 Top Collections</h3><span class="muted" id="source">Magic Eden</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>COLLECTION</th><th>FLOOR</th><th>HIGHEST BID</th><th id="volumeHeading">VOLUME · 5M</th></tr></thead><tbody id="collections"><tr><td colspan="5" class="empty">Loading collections…</td></tr></tbody></table></div></article>
 <aside><article class="panel"><div class="panel-head"><h3>✨ Recently Created</h3><span class="pill">MAGIC EDEN</span></div><div id="new"><div class="empty">Loading marketplace feed…</div></div></article><article class="panel"><div class="panel-head"><h3>🪄 On-chain New Mints</h3><span class="pill">HELIUS</span></div><div id="mints"><div class="empty">Waiting for Helius mint events…</div></div></article><article class="panel alerts"><div class="panel-head"><h3>🔔 Website Alerts</h3><span class="muted">This session</span></div><div id="alerts"><div class="empty">Alerts will appear here when activity is available.</div></div></article></aside></section>
 <footer class="foot"><span>◎ SOL SCANNER · Solana Mainnet</span><span id="health">Waiting for data providers</span><span>Do your own research · Not financial advice</span></footer>
 </main>
@@ -132,5 +163,61 @@ document.querySelectorAll("[data-detail-tab]").forEach(b=>b.addEventListener("cl
   document.querySelectorAll("[data-detail-tab]").forEach(x=>x.classList.toggle("active",x===b));
   loadCollectionTab();
 }));
-updateWindowSelection();load();setInterval(load,30000);
+
+let liveSaleSelectedSymbol=null;
+function renderSniperCollectionOptions(){
+  const select=$("sniperCollection");if(!select)return;
+  const current=select.value;
+  select.innerHTML='<option value="">Select collection…</option>'+rows.map(c=>'<option value="'+esc(c.symbol)+'">'+esc(c.name)+' ('+esc(c.symbol)+')</option>').join("");
+  if(rows.some(c=>c.symbol===current))select.value=current;
+}
+function renderLiveSaleMatches(){
+  const q=$("liveSaleSearch").value.trim().toLowerCase();
+  const matches=rows.filter(c=>(c.name+" "+c.symbol).toLowerCase().includes(q)).slice(0,8);
+  $("liveSaleMatches").innerHTML=matches.map(c=>'<button class="search-result" type="button" data-live-symbol="'+esc(c.symbol)+'">'+esc(c.name)+'</button>').join("")||(q?'<span class="sniper-note">No matching collection in the loaded list.</span>':"");
+}
+async function loadLiveSales(symbol){
+  const c=rows.find(x=>x.symbol===symbol);if(!c)return;
+  liveSaleSelectedSymbol=symbol;
+  $("liveSaleSearch").value=c.name;
+  $("liveSaleMatches").innerHTML="";
+  $("liveSaleHint").textContent="Latest Magic Eden activity for "+c.name+" · "+symbol;
+  $("liveSaleResults").innerHTML='<div class="empty">Loading live collection activity…</div>';
+  try{
+    const data=await get("/api/collection/"+encodeURIComponent(symbol)+"/activities?limit=50");
+    const all=data.activities||[];
+    const salesOnly=all.filter(a=>{const t=String(a.type||a.txType||a.activityType||"").toLowerCase();return ["buy","sale","buynow","acceptbid"].some(k=>t.includes(k));});
+    $("liveSaleResults").innerHTML=salesOnly.slice(0,20).map(a=>{
+      const title=a.token?.name||a.title||a.tokenMint||a.mintAddress||"NFT sale";
+      const price=a.price??a.salePrice??a.amount;
+      const raw=a.blockTime||a.createdAt||a.timestamp;
+      const date=raw?new Date(Number(raw)<1e12?Number(raw)*1000:raw).toLocaleString():"";
+      return '<div class="sale-item"><div><b>'+esc(title)+'</b><br><small class="muted">'+esc(date)+'</small></div><b>'+(price==null?"—":fmt(price)+" SOL")+'</b></div>';
+    }).join("")||(all.length?'<div class="empty">No sale events in the latest activity returned.</div>':'<div class="empty">No recent activity returned by Magic Eden.</div>');
+  }catch(e){$("liveSaleResults").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
+}
+$("liveSaleSearch").addEventListener("input",renderLiveSaleMatches);
+$("liveSaleMatches").addEventListener("click",e=>{const b=e.target.closest("[data-live-symbol]");if(b)loadLiveSales(b.dataset.liveSymbol)});
+$("sniperCollection").addEventListener("change",e=>{const c=rows.find(x=>x.symbol===e.target.value);if(c){$("liveSaleSearch").value=c.name;loadLiveSales(c.symbol)}});
+$("jitoTip").addEventListener("change",e=>{$("customTipWrap").hidden=e.target.value!=="custom"});
+$("connectWallet").addEventListener("click",async()=>{
+  try{
+    const provider=window.solana;
+    if(!provider||!provider.isPhantom){$("walletStatus").textContent="Phantom not detected";$("walletAddress").textContent="Open this page in the Phantom in-app browser or install Phantom.";return}
+    const result=await provider.connect();
+    const address=result.publicKey?.toString()||provider.publicKey?.toString()||"";
+    $("walletStatus").textContent="Wallet connected · "+address.slice(0,6)+"…"+address.slice(-5);
+    $("walletAddress").textContent="Connected public address only. This does not enable background signing or expose your private key.";
+    $("connectWallet").textContent="Phantom connected";
+  }catch(e){$("walletStatus").textContent="Wallet connection cancelled";$("walletAddress").textContent=String(e.message||e)}
+});
+$("saveSniperRules").addEventListener("click",()=>{
+  const min=Number($("sniperMin").value||0),max=Number($("sniperMax").value||0),budget=Number($("sniperBudget").value||0);
+  if(max>0&&min>max){$("sniperSaveStatus").textContent="Minimum price cannot be higher than maximum price.";return}
+  const tip=$("jitoTip").value==="custom"?Number($("customJitoTip").value||0):Number($("jitoTip").value);
+  const rules={symbol:$("sniperCollection").value,trait:$("sniperTrait").value.trim(),traitValue:$("sniperTraitValue").value.trim(),minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,mode:"configuration-only"};
+  try{localStorage.setItem("solScannerSniperRules",JSON.stringify(rules));$("sniperSaveStatus").textContent="Settings saved in this browser. Auto-buy remains locked until secure delegated signing is configured."}
+  catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
+});
+\nrenderSniperCollectionOptions();\nupdateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
 </script></body></html>
