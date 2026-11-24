@@ -1166,6 +1166,77 @@ app.get("/api/collection/:symbol/stats", async (req, res) => {
   }
 });
 
+const coreCollectionTraitsCache = new Map();
+const coreCollectionTraitsBusy = new Map();
+app.get("/api/core/collection/:address/attributes", async (req, res) => {
+  const address = String(req.params.address || "").trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) {
+    return res.status(400).json({ attributes: [], error: "A valid on-chain Core collection address is required." });
+  }
+  const cached = coreCollectionTraitsCache.get(address);
+  if (cached && Date.now() - cached.at < 10 * 60 * 1000) {
+    return res.json({ attributes: cached.attributes, assetCount: cached.assetCount, source: "Helius DAS Core collection assets", cached: true, complete: cached.complete });
+  }
+  try {
+    if (!coreCollectionTraitsBusy.has(address)) {
+      const pending = (async () => {
+        const traits = new Map();
+        let page = 1;
+        let assetCount = 0;
+        let complete = false;
+        const maxPages = 20;
+        while (page <= maxPages) {
+          const result = await heliusRpc("getAssetsByGroup", {
+            groupKey: "collection",
+            groupValue: address,
+            page,
+            limit: 1000,
+            displayOptions: { showCollectionMetadata: true }
+          });
+          const items = Array.isArray(result?.items) ? result.items : [];
+          for (const asset of items) {
+            if (asset?.interface !== "MplCoreAsset") continue;
+            assetCount++;
+            const attrs = asset?.content?.metadata?.attributes;
+            if (!Array.isArray(attrs)) continue;
+            for (const attr of attrs) {
+              const type = String(attr?.trait_type ?? attr?.traitType ?? "").trim();
+              const value = attr?.value == null ? "" : String(attr.value).trim();
+              if (!type || !value) continue;
+              if (!traits.has(type)) traits.set(type, new Set());
+              traits.get(type).add(value);
+            }
+          }
+          const total = Number(result?.total ?? 0);
+          if (items.length < 1000 || (total > 0 && page * 1000 >= total) || !items.length) {
+            complete = true;
+            break;
+          }
+          page++;
+        }
+        const attributes = [...traits.entries()].map(([trait_type, values]) => ({
+          trait_type, values: [...values].sort((a, b) => a.localeCompare(b))
+        })).sort((a, b) => a.trait_type.localeCompare(b.trait_type));
+        const value = { attributes, assetCount, complete, at: Date.now() };
+        coreCollectionTraitsCache.set(address, value);
+        return value;
+      })().finally(() => coreCollectionTraitsBusy.delete(address));
+      coreCollectionTraitsBusy.set(address, pending);
+    }
+    const result = await coreCollectionTraitsBusy.get(address);
+    res.json({
+      attributes: result.attributes,
+      assetCount: result.assetCount,
+      source: "Helius DAS Core collection assets",
+      cached: false,
+      complete: result.complete,
+      note: result.complete ? "Traits aggregated from indexed Core NFTs in this collection." : "Partial trait index: collection exceeded the 20,000-asset scan limit."
+    });
+  } catch (error) {
+    res.status(502).json({ attributes: [], error: error.message, hint: "Helius DAS could not index this Core collection. Verify the on-chain collection address and retry." });
+  }
+});
+
 const collectionAttributesCache = new Map();
 const collectionAttributesBusy = new Map();
 app.get("/api/collection/:symbol/attributes", async (req, res) => {
