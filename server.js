@@ -45,17 +45,26 @@ async function heliusRpc(method,params) {
   return json.result;
 }
 async function parseTransactions(signatures) {
-  if(!signatures.length) return [];
-  const response=await fetch("https://api-mainnet.helius-rpc.com/v0/transactions?api-key="+encodeURIComponent(HELIUS_API_KEY),{
-    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({transactions:signatures}),signal:AbortSignal.timeout(15000)
-  });
-  if(!response.ok) throw new Error("Helius transaction parser returned "+response.status);
-  const parsed=await response.json(); if(!Array.isArray(parsed)) throw new Error("Unexpected Helius parsed-transactions response");
-  return parsed;
-}
-function trimMap(map,limit,cutoff) {
-  for(const [key,value] of map) if(cutoff && value.time<cutoff) map.delete(key);
-  while(map.size>limit) map.delete(map.keys().next().value);
+  if(!signatures.length)return [];
+  // Helius enhanced transaction parser accepts bounded batches; split larger
+  // program scans to avoid HTTP 400 responses on oversized requests.
+  const output=[];
+  for(let i=0;i<signatures.length;i+=50){
+    const batch=signatures.slice(i,i+50);
+    const response=await fetch("https://api-mainnet.helius-rpc.com/v0/transactions?api-key="+encodeURIComponent(HELIUS_API_KEY),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({transactions:batch}),
+      signal:AbortSignal.timeout(15000)
+    });
+    if(!response.ok){
+      const detail=(await response.text().catch(()=>"")).slice(0,500);
+      throw new Error("Helius transaction parser returned "+response.status+(detail?": "+detail:""));
+    }
+    const parsed=await response.json();
+    if(!Array.isArray(parsed))throw new Error("Unexpected Helius parsed-transactions response");
+    output.push(...parsed);
+  }
+  return output;
 }
 async function pollGlobalSales() {
   if(magicBusy||!HELIUS_API_KEY)return; magicBusy=true;
