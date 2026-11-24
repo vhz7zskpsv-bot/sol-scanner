@@ -495,6 +495,10 @@ async function simulateTensorLegacyListing(mint) {
   let stage = "initialization";
   try {
   if (!getSniperSignerStatus().signerConfigured) throw new Error("Dedicated sniper signer is not verified.");
+  // Auto-route Core assets even if an older browser tab calls the legacy endpoint.
+  stage = "detecting NFT standard through Helius DAS";
+  const detectedAsset = await heliusRpc("getAsset", { id: mint });
+  if (detectedAsset?.interface === "MplCoreAsset") return await simulateTensorCoreListing(mint);
   if (!HELIUS_RPC) throw new Error("Solana RPC is not configured.");
 
   stage = "loading SDK modules";
