@@ -25,7 +25,7 @@
 <section class="sniper-grid">
   <article class="panel" id="liveSalesPanel">
     <div class="panel-head"><h3>⚡ Live Sales Search</h3><span class="pill">MAGIC EDEN</span></div>
-    <input class="search-input" id="liveSaleSearch" type="search" placeholder="Search any NFT collection…" autocomplete="off">
+    <input class="search-input" id="liveSaleSearch" type="search" placeholder="Search collection or paste Magic Eden / Tensor link…" autocomplete="off">
     <div class="search-results" id="liveSaleMatches"></div>
     <div class="sniper-note" id="liveSaleHint">Search a collection, then choose it to view its latest marketplace activity.</div>
     <div id="liveSaleResults"><div class="empty">Choose a collection to load its latest activity.</div></div>
@@ -33,7 +33,7 @@
   <article class="panel" id="sniperPanel">
     <div class="panel-head"><h3>🎯 NFT Sniper</h3><span class="pill">SETUP</span></div>
     <label class="metric-label" for="sniperCollectionSearch">Search collection</label>
-    <input class="sniper-input" id="sniperCollectionSearch" type="search" placeholder="Type collection name, e.g. Okay Bears" autocomplete="off">
+    <input class="sniper-input" id="sniperCollectionSearch" type="search" placeholder="Search collection or paste Magic Eden / Tensor link…" autocomplete="off">
     <div class="search-results" id="sniperCollectionMatches"></div>
     <select class="sniper-select" id="sniperCollection" hidden><option value="">Select collection…</option></select>
     <div class="sniper-fields">
@@ -197,9 +197,41 @@ function showCollectionMatches(target, matches, action){
     if(item)action(item);
   }));
 }
+function parseCollectionLink(value){
+  const raw=String(value||"").trim();
+  if(!/^https?:\/\//i.test(raw))return null;
+  try{
+    const url=new URL(raw),host=url.hostname.toLowerCase().replace(/^www\./,"");
+    const parts=url.pathname.split("/").filter(Boolean);
+    if(host==="magiceden.io"&&parts[0]==="marketplace"&&parts[1])return {marketplace:"magiceden",slug:decodeURIComponent(parts[1])};
+    if((host==="tensor.trade"||host==="www.tensor.trade")&&parts[0]==="trade"&&parts[1])return {marketplace:"tensor",slug:decodeURIComponent(parts[1])};
+  }catch{}
+  return null;
+}
+async function resolvePastedCollectionLink(value){
+  const parsed=parseCollectionLink(value);
+  if(!parsed)return null;
+  const symbol=parsed.slug;
+  $("liveSaleHint").textContent="Checking "+parsed.marketplace+" collection link…";
+  // Magic Eden collection APIs use the collection symbol. Tensor slugs are tried
+  // as-is only when they are also valid Magic Eden symbols; otherwise we explain the limitation.
+  const stats=await get("/api/collection/"+encodeURIComponent(symbol)+"/stats");
+  const item={symbol,name:symbol,floorPrice:stats.floorPrice??null,listedCount:stats.listedCount??null,volume24h:stats.volume24h??null,highestBid:stats.highestBid??null,source:"Magic Eden"};
+  collectionSearchMap.set(symbol,item);
+  return {...parsed,item};
+}
 async function renderLiveSaleMatches(){
   const q=$("liveSaleSearch").value.trim();
   if(!q){$("liveSaleMatches").innerHTML="";return;}
+  const parsed=parseCollectionLink(q);
+  if(parsed){
+    $("liveSaleMatches").innerHTML='<span class="sniper-note">Loading collection from pasted link…</span>';
+    try{
+      const resolved=await resolvePastedCollectionLink(q);
+      if(resolved){$("liveSaleSearch").value=resolved.item.name;$("liveSaleMatches").innerHTML="";loadLiveSales(resolved.item.symbol);}
+    }catch(e){$("liveSaleMatches").innerHTML='<span class="sniper-note">'+esc(parsed.marketplace==="tensor"?"Tensor link detected, but its slug is not a valid Magic Eden collection symbol. Tensor collection API access is not configured yet.":e.message)+'</span>'}
+    return;
+  }
   $("liveSaleMatches").innerHTML='<span class="sniper-note">Searching Magic Eden collections…</span>';
   try{const matches=await searchCollectionDirectory(q);showCollectionMatches("liveSaleMatches",matches,c=>loadLiveSales(c.symbol));}
   catch(e){$("liveSaleMatches").innerHTML='<span class="sniper-note">'+esc(e.message)+'</span>'}
@@ -280,6 +312,20 @@ $("sniperTraitValue").addEventListener("change",updateTraitValueCount);
 async function renderSniperCollectionMatches(){
   const q=$("sniperCollectionSearch").value.trim();
   if(!q){$("sniperCollectionMatches").innerHTML="";return;}
+  const parsed=parseCollectionLink(q);
+  if(parsed){
+    $("sniperCollectionMatches").innerHTML='<span class="sniper-note">Loading collection from pasted link…</span>';
+    try{
+      const resolved=await resolvePastedCollectionLink(q),c=resolved.item;
+      const select=$("sniperCollection");
+      select.innerHTML='<option value="">Select collection…</option><option value="'+esc(c.symbol)+'">'+esc(c.name)+' ('+esc(c.symbol)+')</option>';
+      select.value=c.symbol;
+      $("sniperCollectionSearch").value=c.name;
+      $("sniperCollectionMatches").innerHTML="";
+      loadSniperTraits(c.symbol);
+    }catch(e){$("sniperCollectionMatches").innerHTML='<span class="sniper-note">'+esc(parsed.marketplace==="tensor"?"Tensor link detected, but its slug is not a valid Magic Eden collection symbol. Tensor collection API access is not configured yet.":e.message)+'</span>'}
+    return;
+  }
   $("sniperCollectionMatches").innerHTML='<span class="sniper-note">Searching Magic Eden collections…</span>';
   try{
     const matches=await searchCollectionDirectory(q);
