@@ -47,7 +47,7 @@
     </div>
     <div id="customTipWrap" hidden><label class="metric-label" for="customJitoTip">Custom Jito tip (SOL)</label><input class="sniper-input" id="customJitoTip" type="number" min="0" step="0.0001" placeholder="0.002"></div>
     <div class="wallet-status"><b id="walletStatus">Sniper wallet not connected</b><div class="sniper-note" id="walletAddress">Connect a separate wallet with limited funds. Your main wallet stays separate.</div></div>
-    <button class="sniper-action" id="connectWallet" type="button">Connect Phantom wallet</button>
+    <button class="sniper-action" id="connectWallet" type="button">Connect Phantom / Solflare</button>
     <div class="wallet-status"><b>Auto-Buy: locked until secure signer setup</b><div class="sniper-note">Your collection, trait, price, budget and tip settings can be prepared here. Unattended purchases are not enabled yet; wallet connection alone cannot safely authorize background signing.</div></div>
     <button class="sniper-action" id="saveSniperRules" type="button">OK · Enable this collection rule</button>
     <div class="sniper-note" style="margin-top:12px">Your collection rules are saved to Railway cloud storage after signing with your dedicated sniper wallet. Rule ON does not activate purchases.</div>
@@ -375,8 +375,8 @@ let sniperRulesSession=null;
 let connectedSniperWallet="";
 $("connectWallet").addEventListener("click",async()=>{
   try{
-    const provider=window.solana;
-    if(!provider||!provider.isPhantom){$("walletStatus").textContent="Phantom not detected";$("walletAddress").textContent="Open this page in Phantom's in-app browser to connect the dedicated sniper wallet.";return}
+    const provider=window.phantom?.solana||window.solflare||window.solana;
+    if(!provider||typeof provider.connect!=="function"||typeof provider.signMessage!=="function"){$("walletStatus").textContent="Wallet app not detected";$("walletAddress").textContent="Open this page inside Phantom or Solflare's in-app browser to connect the dedicated sniper wallet.";return}
     const result=await provider.connect();
     const address=result.publicKey?.toString()||provider.publicKey?.toString()||"";
     sniperWalletProvider=provider;
@@ -384,7 +384,10 @@ $("connectWallet").addEventListener("click",async()=>{
     sniperRulesSession=null;
     $("walletStatus").textContent="Wallet connected · "+address.slice(0,6)+"…"+address.slice(-5);
     $("walletAddress").textContent="Cloud rule sync requires a signature from the dedicated sniper wallet. No transaction or payment is requested.";
-    $("connectWallet").textContent="Phantom connected";
+    $("connectWallet").textContent=provider.isSolflare?"Solflare connected":"Wallet connected";
+    $("sniperSaveStatus").textContent="Approve the wallet message-signature request to load and sync your cloud rules…";
+    await syncSniperRulesFromCloud();
+    $("sniperSaveStatus").textContent="Cloud rules loaded from Railway. Rule changes will sync automatically.";
   }catch(e){$("walletStatus").textContent="Wallet connection cancelled";$("walletAddress").textContent=String(e.message||e)}
 });
 const SNIPER_RULES_KEY="solScannerSniperRules";
