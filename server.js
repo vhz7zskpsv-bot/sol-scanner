@@ -11,7 +11,7 @@ const HELIUS_RPC = HELIUS_API_KEY ? "https://mainnet.helius-rpc.com/?api-key=" +
 const TOKEN_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
 const MAGIC_EDEN_PROGRAMS = ["M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K", "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc"];
 const TENSOR_PROGRAMS = ["TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp", "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg"];
-const globalSales = new Map(), tensorSales = new Map(), recentMints = new Map();
+const globalSales = new Map(), tensorSales = new Map(), globalActivities = new Map(), recentMints = new Map();
 const seenMagic = new Set(), seenTensor = new Set(), seenMints = new Set();
 let magicLastPollAt=null, magicPollError=null, tensorLastPollAt=null, tensorPollError=null, mintLastPollAt=null, mintPollError=null;
 let magicBaselineReady=false, magicBusy=false, tensorBusy=false, mintBusy=false;
@@ -61,17 +61,23 @@ async function pollGlobalSales() {
       const parsed=await parseTransactions(fresh.map(x=>x.signature));
       fresh.forEach(x=>seenMagic.add(x.signature));
       for(const tx of parsed){
-        if(!String(tx.source||"").toUpperCase().includes("MAGIC_EDEN")||String(tx.type||"").toUpperCase()!=="NFT_SALE")continue;
-        const nft=tx.events?.nft||{}, amount=Number(nft.amount??nft.saleAmount), timestamp=Number(tx.timestamp||nft.timestamp);
-        const first=(Array.isArray(nft.nfts)?nft.nfts:[])[0]||{}, collection=first.collection||nft.collection||{}, signature=tx.signature;
-        if(!signature||!Number.isFinite(amount)||amount<=0||!Number.isFinite(timestamp)||timestamp<=0)continue;
-        const mint=first.mint||first.assetId||first.id||"", symbol=String(collection.symbol||collection.name||"Magic Eden");
+        const source=String(tx.source||"").toUpperCase(),type=String(tx.type||"").toUpperCase();
+        if(!source.includes("MAGIC_EDEN"))continue;
+        const nft=tx.events?.nft||{},amount=Number(nft.amount??nft.saleAmount??nft.price),timestamp=Number(tx.timestamp||nft.timestamp);
+        const first=(Array.isArray(nft.nfts)?nft.nfts[0]:null)||{},collection=first.collection||nft.collection||{},signature=tx.signature;
+        if(!signature||!Number.isFinite(timestamp)||timestamp<=0)continue;
+        const mint=first.mint||first.assetId||first.id||"",symbol=String(collection.symbol||collection.name||"");
         let assetName=first.name||first.metadata?.name||first.content?.metadata?.name||"";
         if(!assetName&&mint){try{const asset=await heliusRpc("getAsset",{id:mint});assetName=asset?.content?.metadata?.name||asset?.content?.metadata?.symbol||"";}catch{}}
-        globalSales.set(signature,{id:signature,name:assetName||"NFT",symbol,collection:collection.name||symbol,mint,time:timestamp*1000,price:amount>100000?amount/1e9:amount,marketplace:"Magic Eden",signature});
+        const price=Number.isFinite(amount)&&amount>0?(amount>100000?amount/1e9:amount):null;
+        const eventType=({NFT_LISTING:"Listing",NFT_BID:"Offer",NFT_GLOBAL_BID:"Global offer",NFT_SALE:"Sale",NFT_CANCEL_LISTING:"Listing cancelled",NFT_BID_CANCELLED:"Offer cancelled"})[type];
+        if(!eventType)continue;
+        const row={id:signature,name:assetName||"NFT",symbol,collection:collection.name||symbol||"Unknown collection",mint,time:timestamp*1000,price,marketplace:"Magic Eden",type:eventType,signature};
+        globalActivities.set("ME:"+signature,row);
+        if(type==="NFT_SALE"&&price!==null)globalSales.set(signature,row);
       }
     }
-    trimMap(seenMagic,10000);trimMap(globalSales,500,Date.now()-12*60*60*1000);
+    trimMap(seenMagic,10000);trimMap(globalSales,500,Date.now()-12*60*60*1000);trimMap(globalActivities,1500,Date.now()-24*60*60*1000);
     magicLastPollAt=new Date().toISOString();magicPollError=null;
   }catch(error){magicPollError=error.message;}finally{magicBusy=false;}
 }
@@ -83,22 +89,26 @@ async function pollTensorSales() {
     if(fresh.length){
       const parsed=await parseTransactions(fresh.map(x=>x.signature));fresh.forEach(x=>seenTensor.add(x.signature));
       for(const tx of parsed){
-        if(String(tx.source||"").toUpperCase()!=="TENSOR"||String(tx.type||"").toUpperCase()!=="NFT_SALE")continue;
-        const nft=tx.events?.nft||{},amount=Number(nft.amount??nft.saleAmount),timestamp=Number(tx.timestamp||nft.timestamp),id=tx.signature;
-        if(!id||!Number.isFinite(amount)||amount<=0||!Number.isFinite(timestamp)||timestamp<=0)continue;
-        const first=(Array.isArray(nft.nfts)?nft.nfts:[])[0]||{},mint=first.mint||first.assetId||"";
+        if(String(tx.source||"").toUpperCase()!=="TENSOR")continue;
+        const type=String(tx.type||"").toUpperCase(),nft=tx.events?.nft||{},amount=Number(nft.amount??nft.saleAmount??nft.price),timestamp=Number(tx.timestamp||nft.timestamp),id=tx.signature;
+        if(!id||!Number.isFinite(timestamp)||timestamp<=0)continue;
+        const first=(Array.isArray(nft.nfts)?nft.nfts[0]:null)||{},mint=first.mint||first.assetId||"";
         let asset=null,assetName="",symbol="",collection="";
         if(mint){try{asset=await heliusRpc("getAsset",{id:mint});}catch{}}
         const metadata=asset?.content?.metadata||{};
-        assetName=metadata.name||asset?.content?.files?.[0]?.name||"";
+        assetName=metadata.name||asset?.content?.files?.[0]?.name||first.name||"";
         const grouping=Array.isArray(asset?.grouping)?asset.grouping.find(x=>x.group_key==="collection"):null;
         symbol=asset?.content?.metadata?.symbol||"";
         collection=grouping?.group_value||symbol||"Tensor";
-        const price=amount>100000?amount/1e9:amount;
-        tensorSales.set(id,{id,name:assetName||"NFT",symbol,collection,mint,time:timestamp*1000,price,marketplace:"Tensor",signature:id});
+        const price=Number.isFinite(amount)&&amount>0?(amount>100000?amount/1e9:amount):null;
+        const eventType=({NFT_LISTING:"Listing",NFT_SALE:"Sale",NFT_CANCEL_LISTING:"Listing cancelled"})[type];
+        if(!eventType)continue;
+        const row={id,name:assetName||"NFT",symbol,collection,mint,time:timestamp*1000,price,marketplace:"Tensor",type:eventType,signature:id};
+        globalActivities.set("TN:"+id,row);
+        if(type==="NFT_SALE"&&price!==null)tensorSales.set(id,row);
       }
     }
-    trimMap(seenTensor,10000);trimMap(tensorSales,500,Date.now()-12*60*60*1000);
+    trimMap(seenTensor,10000);trimMap(tensorSales,500,Date.now()-12*60*60*1000);trimMap(globalActivities,1500,Date.now()-24*60*60*1000);
     tensorLastPollAt=new Date().toISOString();tensorPollError=null;
   }catch(error){tensorPollError=error.message;}finally{tensorBusy=false;}
 }
@@ -162,6 +172,7 @@ app.get("/api/collection/:symbol/listings",async(req,res)=>{
   catch(error){res.status(502).json({listings:[],error:error.message});}
 });
 app.get("/api/live-sales",(_req,res)=>{const sales=[...globalSales.values(),...tensorSales.values()].sort((a,b)=>b.time-a.time).slice(0,100);res.json({sales,source:"Magic Eden + Tensor on-chain via Helius",lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,note:"Observed sales since this monitor started; not historical backfill. Tensor floor and bid quotes require Tensor API access."});});
+app.get("/api/live-feed",(_req,res)=>{const events=[...globalActivities.values()].sort((a,b)=>b.time-a.time).slice(0,500);res.json({events,source:"Helius parsed Magic Eden + Tensor marketplace program events",lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,note:"Observed events since monitor start; not a complete historical marketplace archive. Offers currently depend on Helius Magic Eden event classification."});});
 app.get("/api/new-mints",(_req,res)=>res.json({mints:[...recentMints.values()].sort((a,b)=>b.time-a.time),source:"Helius Mainnet",lastPollAt:mintLastPollAt,warning:mintPollError,note:"Only Helius-classified NFT mint transactions are shown; this is not a complete mint index."}));
 app.get("/api/collection-mints",async(req,res)=>{
   try{
