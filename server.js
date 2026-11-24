@@ -9,6 +9,27 @@ const HELIUS_RPC = process.env.HELIUS_API_KEY
   ? `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
   : null;
 
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY || null;
+const TOKEN_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
+const recentMints = new Map();
+const seenMintSignatures = new Set();
+let lastMintPollAt = null;
+let mintPollError = null;
+
+async function heliusRpc(method, params) {
+  if (!HELIUS_RPC) throw new Error("HELIUS_API_KEY is not configured");
+  const response = await fetch(HELIUS_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: "sol-scanner", method, params }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error(`Helius RPC returned ${response.status}`);
+  const json = await response.json();
+  if (json.error) throw new Error(json.error.message || "Helius RPC error");
+  return json.result;
+}
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
@@ -80,6 +101,68 @@ function volumeFor(minutes) {
   return { sol: recent.reduce((sum, x) => sum + x.price, 0), sales: recent.length };
 }
 
+async function pollNewMints() {
+  if (!HELIUS_API_KEY) {
+    mintPollError = "HELIUS_API_KEY is not configured";
+    return;
+  }
+  try {
+    const signatures = await heliusRpc("getSignaturesForAddress", [
+      TOKEN_METADATA_PROGRAM,
+      { limit: 50, commitment: "confirmed" }
+    ]);
+    const fresh = (Array.isArray(signatures) ? signatures : [])
+      .filter(item => item.signature && !seenMintSignatures.has(item.signature))
+      .slice(0, 50);
+    if (!fresh.length) {
+      lastMintPollAt = new Date().toISOString();
+      mintPollError = null;
+      return;
+    }
+    const response = await fetch(
+      `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transactions: fresh.map(item => item.signature) }),
+        signal: AbortSignal.timeout(15000)
+      }
+    );
+    if (!response.ok) throw new Error(`Helius transaction parser returned ${response.status}`);
+    const parsed = await response.json();
+    if (!Array.isArray(parsed)) throw new Error("Unexpected Helius parsed-transactions response");
+    for (let i = 0; i < fresh.length; i++) seenMintSignatures.add(fresh[i].signature);
+    for (const tx of parsed) {
+      const txType = String(tx.type || tx.parsed?.type || "").toUpperCase();
+      const nftEvents = [].concat(tx.events?.nft || tx.events?.nfts || tx.parsed?.events?.nft || []);
+      const tokenTransfers = [].concat(tx.tokenTransfers || tx.events?.tokenTransfers || tx.parsed?.tokenTransfers || []);
+      if (!txType.includes("MINT") && !nftEvents.length) continue;
+      const candidates = nftEvents.length ? nftEvents : tokenTransfers;
+      for (const nft of candidates) {
+        const mint = nft.mint || nft.mintAddress || nft.tokenMint || nft.address;
+        if (!mint) continue;
+        const blockTime = Number(tx.timestamp || tx.blockTime || tx.parsed?.timestamp || Date.now() / 1000);
+        const event = {
+          mint,
+          name: nft.name || nft.metadata?.name || nft.content?.metadata?.name || "New NFT mint",
+          symbol: nft.symbol || nft.metadata?.symbol || "",
+          collection: nft.collection?.name || nft.collectionName || "",
+          signature: tx.signature || fresh.find(x => !recentMints.has(mint))?.signature || "",
+          time: Number.isFinite(blockTime) ? blockTime * 1000 : Date.now(),
+          source: "Helius Mainnet"
+        };
+        if (!recentMints.has(mint)) recentMints.set(mint, event);
+      }
+    }
+    while (seenMintSignatures.size > 5000) seenMintSignatures.delete(seenMintSignatures.values().next().value);
+    while (recentMints.size > 100) recentMints.delete(recentMints.keys().next().value);
+    lastMintPollAt = new Date().toISOString();
+    mintPollError = null;
+  } catch (error) {
+    mintPollError = error.message;
+  }
+}
+
 app.get("/api/health", async (_req, res) => {
   let helius = "not_configured";
   if (HELIUS_RPC) {
@@ -114,6 +197,17 @@ app.get("/api/collections", async (_req, res) => {
   } catch (error) {
     res.status(502).json({ collections: [], error: error.message, hint: "Check marketplace API access and try again." });
   }
+});
+
+
+app.get("/api/new-mints", (_req, res) => {
+  res.json({
+    mints: [...recentMints.values()].sort((a, b) => b.time - a.time),
+    source: "Helius Mainnet",
+    lastPollAt: lastMintPollAt,
+    warning: mintPollError,
+    note: "Recent mint transactions involving the Metaplex Token Metadata program; not a complete index of every Solana token launch."
+  });
 });
 
 app.get("/api/volume", (_req, res) => {
@@ -175,5 +269,7 @@ app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.h
 app.listen(PORT, () => {
   console.log(`SOL SCANNER running on port ${PORT}`);
   pollSales();
+  pollNewMints();
   setInterval(pollSales, 60000);
+  setInterval(pollNewMints, 30000);
 });
