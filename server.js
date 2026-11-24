@@ -30,6 +30,56 @@ const sol = (value) => {
   return n > 100000 ? n / 1e9 : n;
 };
 
+const sales = new Map();
+const tracked = new Set();
+let lastPollAt = null;
+let pollError = null;
+
+function activityTime(a) {
+  const raw = a.blockTime ?? a.createdAt ?? a.timestamp ?? a.time;
+  if (raw == null) return null;
+  const n = Number(raw);
+  const d = Number.isFinite(n) ? new Date(n < 1e12 ? n * 1000 : n) : new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
+function isSale(a) {
+  const t = String(a.type ?? a.txType ?? a.activityType ?? "").toLowerCase();
+  return ["buy", "sale"].some(k => t.includes(k));
+}
+function recordActivity(symbol, a) {
+  if (!isSale(a)) return;
+  const time = activityTime(a);
+  const price = sol(a.price ?? a.salePrice ?? a.amount);
+  if (!time || price == null || price <= 0) return;
+  const id = a.signature ?? a.txSignature ?? a.txid ?? a.tokenMint ?? `${symbol}:${time}:${price}`;
+  if (sales.has(id)) return;
+  sales.set(id, { id, symbol, time, price });
+}
+async function pollSales() {
+  try {
+    const raw = await meGet("/collections?offset=0&limit=100");
+    const collections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 12);
+    const jobs = collections.map(async c => {
+      tracked.add(c.symbol);
+      const data = await meGet(`/collections/${encodeURIComponent(c.symbol)}/activities?offset=0&limit=50`);
+      (Array.isArray(data) ? data : []).forEach(a => recordActivity(c.symbol, a));
+    });
+    const results = await Promise.allSettled(jobs);
+    const failed = results.filter(x => x.status === "rejected").length;
+    pollError = failed ? `${failed} collection activity feeds unavailable` : null;
+    lastPollAt = new Date().toISOString();
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
+  } catch (e) {
+    pollError = e.message;
+  }
+}
+function volumeFor(minutes) {
+  const cutoff = Date.now() - minutes * 60 * 1000;
+  const recent = [...sales.values()].filter(x => x.time >= cutoff);
+  return { sol: recent.reduce((sum, x) => sum + x.price, 0), sales: recent.length };
+}
+
 app.get("/api/health", async (_req, res) => {
   let helius = "not_configured";
   if (HELIUS_RPC) {
@@ -44,7 +94,7 @@ app.get("/api/health", async (_req, res) => {
       helius = j.result === "ok" ? "connected" : "error";
     } catch { helius = "error"; }
   }
-  res.json({ ok: true, helius, marketplace: "Magic Eden", timestamp: new Date().toISOString() });
+  res.json({ ok: true, helius, marketplace: "Magic Eden", timestamp: new Date().toISOString(), lastPollAt, pollError });
 });
 
 app.get("/api/collections", async (_req, res) => {
@@ -66,6 +116,16 @@ app.get("/api/collections", async (_req, res) => {
   }
 });
 
+app.get("/api/volume", (_req, res) => {
+  res.json({
+    windows: { "5m": volumeFor(5), "15m": volumeFor(15), "1h": volumeFor(60) },
+    trackedCollections: tracked.size,
+    lastPollAt,
+    note: "Observed marketplace sale events since this service started polling; not historical backfill.",
+    warning: pollError
+  });
+});
+
 app.get("/api/collection/:symbol/stats", async (req, res) => {
   try {
     const stats = await meGet(`/collections/${encodeURIComponent(req.params.symbol)}/stats`);
@@ -74,8 +134,7 @@ app.get("/api/collection/:symbol/stats", async (req, res) => {
       listedCount: stats.listedCount ?? null,
       volume24h: sol(stats.volume24hr ?? stats.volume24h),
       volume7d: sol(stats.volume7d),
-      highestBid: null,
-      raw: stats
+      highestBid: null
     });
   } catch (error) {
     res.status(502).json({ error: error.message });
@@ -96,9 +155,9 @@ app.get("/api/new", async (_req, res) => {
   try {
     const raw = await meGet("/collections?offset=0&limit=100");
     const collections = (Array.isArray(raw) ? raw : [])
-      .filter((c) => c.symbol && (c.createdAt || c.updatedAt || c.name))
+      .filter(c => c.symbol && (c.createdAt || c.updatedAt || c.name))
       .slice(0, 20)
-      .map((c) => ({
+      .map(c => ({
         symbol: c.symbol,
         name: c.name || c.symbol,
         image: c.image || c.imageURI || "",
@@ -113,4 +172,8 @@ app.get("/api/new", async (_req, res) => {
 
 app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-app.listen(PORT, () => console.log(`SOL SCANNER running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`SOL SCANNER running on port ${PORT}`);
+  pollSales();
+  setInterval(pollSales, 60000);
+});
