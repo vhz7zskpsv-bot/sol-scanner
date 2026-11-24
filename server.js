@@ -119,6 +119,10 @@ function normalizeSniperRules(input) {
     if (!rule || typeof rule !== "object" || Array.isArray(rule)) throw new Error("Invalid rule.");
     const symbol = String(rule.symbol || "").trim().slice(0, 100);
     if (!symbol) throw new Error("Every rule needs a collection symbol.");
+    const collectionAddress = String(rule.collectionAddress || "").trim();
+    if (collectionAddress && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(collectionAddress)) {
+      throw new Error("Core collection address must be a valid Solana public key.");
+    }
     const minPrice = Number(rule.minPrice ?? 0);
     const maxPrice = Number(rule.maxPrice ?? 0);
     const maxSpend = Number(rule.maxSpend ?? 0);
@@ -133,6 +137,7 @@ function normalizeSniperRules(input) {
       : [];
     return {
       symbol,
+      collectionAddress,
       name: String(rule.name || symbol).slice(0, 160),
       trait: String(rule.trait || "").slice(0, 120),
       traitValues,
@@ -761,9 +766,17 @@ async function simulateTensorCoreListing(mint) {
         symbol = String(collectionAsset.content?.metadata?.symbol || "").trim();
       }
     }
-    if (!symbol) throw new Error("Helius DAS did not provide a verified symbol on the Core asset or its linked collection asset; refusing to guess which saved rule applies.");
-    const matchingRule = persistedSniperRules.find(rule => rule.enabled && rule.symbol.toLowerCase() === symbol.toLowerCase());
-    if (!matchingRule) throw new Error("No enabled sniper rule matches Core asset collection symbol " + symbol + ".");
+    const matchingRule = persistedSniperRules.find(rule => {
+      if (!rule.enabled) return false;
+      if (rule.collectionAddress) return Boolean(collection) && rule.collectionAddress === collection;
+      return Boolean(symbol) && rule.symbol.toLowerCase() === symbol.toLowerCase();
+    });
+    if (!matchingRule) {
+      if (!symbol && collection) {
+        throw new Error("Core collection symbol is missing. Add this exact on-chain collection address to the saved rule: " + collection);
+      }
+      throw new Error("No enabled sniper rule matches this verified Core collection identity.");
+    }
     const attributes = asset.content?.metadata?.attributes || [];
     if (matchingRule.trait) {
       const trait = attributes.find(a => String(a.trait_type || "").toLowerCase() === matchingRule.trait.toLowerCase());
