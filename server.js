@@ -483,6 +483,105 @@ function getSniperExecutionReadiness() {
   };
 }
 
+
+async function simulateTensorLegacyListing(mint) {
+  if (!getSniperSignerStatus().signerConfigured) throw new Error("Dedicated sniper signer is not verified.");
+  if (!HELIUS_RPC) throw new Error("Solana RPC is not configured.");
+
+  const web3 = require("@solana/web3.js");
+  const tensor = require("@tensor-foundation/marketplace");
+  const common = require("@tensor-foundation/common-helpers");
+  const resolvers = require("@tensor-foundation/resolvers");
+  const secret = signerKeyBytes(process.env.SNIPER_WALLET_PRIVATE_KEY);
+  const seed = secret.subarray(0, 32);
+  const publicKey = deriveEd25519PublicKey(seed);
+  const secret64 = secret.length === 64 ? secret : Buffer.concat([seed, publicKey]);
+  const signer = await web3.createKeyPairSignerFromBytes(new Uint8Array(secret64), false);
+  if (signer.address !== EXPECTED_SNIPER_WALLET) throw new Error("SDK signer address does not match the configured sniper wallet.");
+
+  const mintAddress = web3.address(mint);
+  const rpc = web3.createSolanaRpc(HELIUS_RPC);
+  const [listStateAddress] = await tensor.findListStatePda({ mint: mintAddress });
+  const listState = await tensor.fetchMaybeListState(rpc, listStateAddress);
+  web3.assertAccountExists(listState);
+  const { owner, amount, rentPayer, makerBroker, privateTaker, cosigner } = listState.data;
+
+  if ((web3.isSome(privateTaker) && web3.unwrapOption(privateTaker) !== signer.address) || cosigner) {
+    throw new Error("This Tensor listing is private or requires a cosigner; safe public SDK simulation is not supported.");
+  }
+
+  const priceLamports = Number(amount);
+  if (!Number.isSafeInteger(priceLamports) || priceLamports <= 0) throw new Error("Tensor listing returned an invalid price.");
+  const priceSol = priceLamports / 1_000_000_000;
+  if (priceSol > 0.02) throw new Error("Listing price exceeds your 0.02 SOL maximum.");
+
+  const [metadataPda] = await resolvers.findMetadataPda({ mint: mintAddress });
+  const metadata = await common.fetchMetadata(rpc, metadataPda);
+  const symbol = String(metadata?.data?.symbol || "").trim();
+  const matchingRule = persistedSniperRules.find(rule => rule.enabled && rule.symbol.toLowerCase() === symbol.toLowerCase());
+  if (!matchingRule) throw new Error("No enabled sniper rule matches this NFT collection symbol.");
+  if (matchingRule.trait) throw new Error("This dry-run currently refuses trait-filtered rules until NFT attributes can be verified against the listing metadata.");
+  if (priceSol < matchingRule.minPrice || priceSol > matchingRule.maxPrice || priceSol > matchingRule.maxSpend) {
+    throw new Error("Listing price is outside the enabled collection rule's price or spend limits.");
+  }
+
+  const creators = (metadata?.data?.creators || []).map(creator => creator.address);
+  const ruleSet = metadata?.programmableConfig?.ruleSet ?? undefined;
+  const buyIx = await tensor.getBuyLegacyInstructionAsync({
+    payer: signer,
+    owner,
+    mint: mintAddress,
+    maxAmount: amount,
+    rentDestination: rentPayer ?? undefined,
+    makerBroker: web3.unwrapOption(makerBroker) ?? undefined,
+    takerBroker: signer.address,
+    authorizationRules: ruleSet,
+    tokenStandard: metadata.tokenStandard,
+    creators
+  });
+
+  // Tensor's helper compiles an unsigned v0 message and calls simulateTransaction
+  // with sigVerify=false. It does not sign or submit the transaction.
+  const simulation = await common.simulateTxWithIxs(rpc, [buyIx], signer);
+  const value = simulation?.value || {};
+  return {
+    mode: "unsigned-tensor-simulation",
+    mint,
+    collectionSymbol: symbol,
+    walletAddress: signer.address,
+    listingPriceSol: priceSol,
+    rule: { minPrice: matchingRule.minPrice, maxPrice: matchingRule.maxPrice, maxSpend: matchingRule.maxSpend },
+    simulationPassed: !value.err,
+    simulationError: value.err || null,
+    unitsConsumed: value.unitsConsumed ?? null,
+    logs: Array.isArray(value.logs) ? value.logs.slice(-30) : [],
+    transactionSigned: false,
+    transactionSubmitted: false,
+    solSpent: false,
+    note: "Unsigned simulation only. No signature, network submission, Jito tip, or SOL spend. Exact total fees must be verified before any live purchase."
+  };
+}
+
+app.post("/api/sniper/tensor/simulate-legacy", requireSniperRulesSession, async (req, res) => {
+  try {
+    const mint = String(req.body?.mint || "").trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) {
+      return res.status(400).json({ error: "Enter a valid Solana NFT mint address." });
+    }
+    const result = await simulateTensorLegacyListing(mint);
+    res.status(result.simulationPassed ? 200 : 422).json(result);
+  } catch (error) {
+    res.status(400).json({
+      mode: "unsigned-tensor-simulation",
+      simulationPassed: false,
+      transactionSigned: false,
+      transactionSubmitted: false,
+      solSpent: false,
+      error: String(error.message || "Tensor simulation failed").slice(0, 240)
+    });
+  }
+});
+
 app.get("/api/sniper/execution-readiness", (_req, res) => {
   res.json(getSniperExecutionReadiness());
 });
