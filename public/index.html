@@ -101,9 +101,8 @@ tbody tr{background:#0f151d;transition:background .15s}tbody tr:nth-child(even){
   <div class="panel-head"><h3>⚡ Tensor Bid Bot</h3><span class="pill">SEPARATE MODULE</span></div>
   <div class="sniper-note">Collection-wide aur trait bids ke rules yahan alag save honge. Start bid aur max bid tum set karoge; floor price sirf reference hai.</div>
   <div class="sniper-fields">
-    <div><label for="bidCollection">Tensor collection slug</label><input class="sniper-input" id="bidCollection" placeholder="Collection slug (Tensor URL ka /trade/ ke baad wala hissa)"></div>
+    <div><label for="bidCollection">Tensor collection link or UUID</label><input class="sniper-input" id="bidCollection" placeholder="Paste Tensor /trade/ link or collection UUID"></div>
     <div><label for="bidCollectionName">Collection name (optional)</label><input class="sniper-input" id="bidCollectionName" placeholder="Collection name"></div>
-    <div><label for="bidWhitelist">Tensor whitelist address</label><input class="sniper-input" id="bidWhitelist" placeholder="On-chain whitelist address (required for SDK simulation)"></div>
     <div><label for="bidType">Bid type</label><select class="sniper-select" id="bidType"><option value="collection">Collection-wide bid</option><option value="trait">Trait bid</option></select></div>
     <div id="bidTraitFields" hidden><label for="bidTraitName">Trait name</label><input class="sniper-input" id="bidTraitName" placeholder="e.g. Background"></div>
     <div id="bidTraitValueField" hidden><label for="bidTraitValue">Trait value</label><input class="sniper-input" id="bidTraitValue" placeholder="e.g. Gold"></div>
@@ -610,9 +609,18 @@ $("bidType").addEventListener("change",()=>{
   $("bidTraitValueField").hidden=!trait;
 });
 $("saveBidRule").addEventListener("click",async()=>{
-  const slug=$("bidCollection").value.trim().replace(/^https?:\/\/(www\.)?tensor\.trade\/trade\//i,"").split(/[?#/]/)[0];
+  const collectionInput=$("bidCollection").value.trim();
+  if(!collectionInput){$("bidSaveStatus").textContent="Tensor collection link ya UUID paste karo.";return}
+  let resolved;
+  try {
+    $("bidSaveStatus").textContent="Resolving collection UUID and verifying Tensor whitelist on-chain…";
+    const resolveResponse=await fetch("/api/bids/resolve-collection",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({collectionInput})});
+    resolved=await resolveResponse.json();
+    if(!resolveResponse.ok)throw new Error(resolved.error||"Collection resolve failed.");
+  } catch(error) { $("bidSaveStatus").textContent=String(error.message||error); return; }
+  const slug=resolved.collectionSlug;
   const bidType=$("bidType").value;
-  const rule={id:crypto.randomUUID(),collectionSlug:slug,collectionName:$("bidCollectionName").value.trim()||slug,bidType,traitName:$("bidTraitName").value.trim(),traitValue:$("bidTraitValue").value.trim(),startBidSol:Number($("bidStart").value),maxBidSol:Number($("bidMax").value),incrementSol:Number($("bidIncrement").value),autoOutbid:true,enabled:true,whitelistAddress:$("#bidWhitelist").value.trim()};
+  const rule={id:crypto.randomUUID(),collectionSlug:slug,collectionName:$("bidCollectionName").value.trim()||resolved.collectionName||slug,collectionUuid:resolved.collectionUuid,bidType,traitName:$("bidTraitName").value.trim(),traitValue:$("bidTraitValue").value.trim(),startBidSol:Number($("bidStart").value),maxBidSol:Number($("bidMax").value),incrementSol:Number($("bidIncrement").value),autoOutbid:true,enabled:true};
   try{
     $("bidSaveStatus").textContent="Authorizing wallet and saving separate bid rule…";
     let rules=[];
