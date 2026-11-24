@@ -287,8 +287,9 @@ function activityTime(a) {
   return Number.isNaN(d.getTime()) ? null : d.getTime();
 }
 function isSale(a) {
-  const t = String(a.type ?? a.txType ?? a.activityType ?? "").toLowerCase();
-  return ["buynow", "sale", "buy"].some(k => t.includes(k));
+  const t = String(a.type ?? a.txType ?? a.activityType ?? "").toLowerCase().replace(/[\\s-]+/g, "_");
+  // Magic Eden reports both instant buys and accepted bids as sales.
+  return ["buy", "sale", "accept_bid", "fill_order", "nft_sale"].some(k => t.includes(k));
 }
 function recordActivity(symbol, a) {
   if (!isSale(a)) return;
@@ -1340,9 +1341,12 @@ app.get("/api/collection/:symbol/listings", async (req, res) => {
 
 app.get("/api/collection/:symbol/activities", async (req, res) => {
   try {
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
-    const activities = await meGet(`/collections/${encodeURIComponent(req.params.symbol)}/activities?offset=0&limit=${limit}`);
-    res.json({ activities: Array.isArray(activities) ? activities : [] });
+    // Magic Eden documents a maximum page size of 1000 for this endpoint.
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit || 100)));
+    const payload = await meGet(`/collections/${encodeURIComponent(req.params.symbol)}/activities?offset=0&limit=${limit}`);
+    const activities = Array.isArray(payload) ? payload :
+      (payload?.activities ?? payload?.results ?? payload?.data ?? []);
+    res.json({ activities: Array.isArray(activities) ? activities : [], source: "Magic Eden" });
   } catch (error) {
     res.status(502).json({ activities: [], error: error.message });
   }
