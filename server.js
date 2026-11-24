@@ -261,6 +261,7 @@ app.get("/api/collections", async (_req, res) => {
       floorPrice: sol(c.floorPrice),
       listedCount: c.listedCount ?? null,
       volume24h: sol(c.volume24hr ?? c.volume24h),
+      highestBid: null,
       volumeAll: sol(c.volumeAll),
       source: "Magic Eden"
     }));
@@ -272,12 +273,13 @@ app.get("/api/collections", async (_req, res) => {
       await Promise.all(batch.map(async (c) => {
         if (!c.symbol) return;
         try {
-          const stats = await meGet(`/collections/${encodeURIComponent(c.symbol)}/stats`);
+          const stats = await meGet(`/collections/${encodeURIComponent(c.symbol)}/stats?timeWindow=24h&listingAggMode=true`);
           c.floorPrice = sol(stats.floorPrice) ?? c.floorPrice;
           c.listedCount = stats.listedCount ?? c.listedCount;
           c.volume24h = sol(stats.volume24hr ?? stats.volume24h) ?? c.volume24h;
           c.volumeAll = sol(stats.volumeAll) ?? c.volumeAll;
           c.volume7d = sol(stats.volume7d);
+          c.highestBid = sol(stats.highestBid ?? stats.highestOffer ?? stats.highestBidPrice);
         } catch {
           // Keep list values if an individual stats request is unavailable.
         }
@@ -330,10 +332,21 @@ app.get("/api/collection/:symbol/stats", async (req, res) => {
       listedCount: stats.listedCount ?? null,
       volume24h: sol(stats.volume24hr ?? stats.volume24h),
       volume7d: sol(stats.volume7d),
-      highestBid: null
+      highestBid: sol(stats.highestBid ?? stats.highestOffer ?? stats.highestBidPrice)
     });
   } catch (error) {
     res.status(502).json({ error: error.message });
+  }
+});
+
+app.get("/api/collection/:symbol/listings", async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const offset = Math.max(0, Number(req.query.offset || 0));
+    const listings = await meGet(`/collections/${encodeURIComponent(req.params.symbol)}/listings?offset=${offset}&limit=${limit}&sort=listPrice&sort_direction=asc&listingAggMode=true`);
+    res.json({ listings: Array.isArray(listings) ? listings : [], source: "Magic Eden" });
+  } catch (error) {
+    res.status(502).json({ listings: [], error: error.message });
   }
 });
 
