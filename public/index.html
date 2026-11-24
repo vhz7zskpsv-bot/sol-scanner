@@ -113,7 +113,7 @@ tbody tr{background:#0f151d;transition:background .15s}tbody tr:nth-child(even){
   <div class="wallet-status"><b id="bidBotStatus">Checking Tensor bid engine…</b><div class="sniper-note" id="bidBotHint">Connect your dedicated wallet in the NFT Sniper panel to authorize cloud rule storage. Saving a rule does not place a bid.</div></div>
   <button class="sniper-action" id="saveBidRule" type="button">Save bidding rule</button>
   <div class="sniper-note" id="bidSaveStatus" style="margin-top:10px">Live bids, automatic rebids and transaction signing are LOCKED until Tensor API/transaction flow, escrow and cancellation are verified.</div>
-  <div id="bidRuleList" class="sniper-rule-list"><div class="empty">No bid rules loaded.</div></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:16px"><b style="font-size:12px">Live bid monitor</b><button class="sniper-rule-actions" id="refreshBidMonitor" type="button" style="background:#17212b;border:1px solid #30404c;color:var(--text);border-radius:7px;padding:8px 10px">Refresh bids</button></div><div id="bidMonitorStatus" class="sniper-note" style="margin:8px 0">Connect wallet and configure Tensor API key to view live market bids.</div><div id="bidRuleList" class="sniper-rule-list"><div class="empty">No bid rules loaded.</div></div>
 </section>
 
 <section class="section-grid"><article class="panel"><div class="panel-head"><h3>🏆 Top Collections</h3><span class="muted" id="source">Magic Eden</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>COLLECTION</th><th>FLOOR</th><th>HIGHEST BID</th><th id="volumeHeading">VOLUME · 5M</th></tr></thead><tbody id="collections"><tr><td colspan="5" class="empty">Loading collections…</td></tr></tbody></table></div></article>
@@ -562,10 +562,28 @@ async function refreshBidEngineStatus(){
     $("bidSaveStatus").textContent=data.executionEnabled?"Execution enabled":"LIVE BID EXECUTION LOCKED · No transaction will be signed or submitted.";
   }catch(e){$("bidBotStatus").textContent="Bid engine status unavailable";$("bidBotHint").textContent=String(e.message||e)}
 }
+let bidSnapshotsByRule={};
 function renderBidRules(rules){
   const box=$("bidRuleList");
   if(!Array.isArray(rules)||!rules.length){box.innerHTML='<div class="empty">No bid rules saved yet.</div>';return}
-  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.collectionName||r.collectionSlug)+'</b><small>'+esc(r.collectionSlug)+' · '+(r.bidType==="trait"?"Trait: "+esc(r.traitName)+" = "+esc(r.traitValue):"Collection-wide")+'<br>Start '+fmt(r.startBidSol)+' SOL · Max '+fmt(r.maxBidSol)+' SOL · Step '+fmt(r.incrementSol)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · LIVE BID LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-bid-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-bid-remove="'+i+'">Remove</button></div></div>').join("");
+  box.innerHTML=rules.map((r,i)=>{
+    const s=bidSnapshotsByRule[r.id];
+    const monitor=s?.error?'Monitor error: '+esc(s.error):s?('Top bid: '+fmt(s.highestBidSol)+' SOL · Your bid: '+fmt(s.ownBidSol)+' SOL · '+(s.outbid?'OUTBID':'Not outbid')+' · Next suggested: '+fmt(s.nextSuggestedBidSol)+' SOL'+(s.maxReached?' · MAX LIMIT':'')+'<br>Observed '+new Date(s.observedAt).toLocaleTimeString()):'Waiting for live bid snapshot';
+    return '<div class="sniper-rule"><div style="min-width:0"><b>'+esc(r.collectionName||r.collectionSlug)+'</b><small>'+esc(r.collectionSlug)+' · '+(r.bidType==="trait"?"Trait: "+esc(r.traitName)+" = "+esc(r.traitValue):"Collection-wide")+'<br>Start '+fmt(r.startBidSol)+' SOL · Max '+fmt(r.maxBidSol)+' SOL · Step '+fmt(r.incrementSol)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · LIVE TX LOCKED</span><small>'+monitor+'</small></div><div class="sniper-rule-actions"><button type="button" data-bid-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-bid-remove="'+i+'">Remove</button></div></div>';
+  }).join("");
+}
+async function refreshBidMonitor(){
+  if(!sniperRulesSession){$("bidMonitorStatus").textContent="Connect the dedicated wallet to authorize live bid monitoring.";return}
+  try{
+    $("bidMonitorStatus").textContent="Reading Tensor order books…";
+    const response=await fetch("/api/bids/monitor",{headers:{Authorization:"Bearer "+sniperRulesSession}});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Live bid monitor unavailable.");
+    bidSnapshotsByRule={};(data.snapshots||[]).forEach(s=>{bidSnapshotsByRule[s.ruleId]=s});
+    $("bidMonitorStatus").textContent=(data.snapshots||[]).length+" enabled rules checked · read-only · "+new Date(data.checkedAt).toLocaleTimeString()+". No transactions submitted.";
+    const rulesResponse=await fetch("/api/bids/rules",{headers:{Authorization:"Bearer "+sniperRulesSession}});
+    const rulesData=await rulesResponse.json();if(rulesResponse.ok)renderBidRules(rulesData.rules);
+  }catch(e){$("bidMonitorStatus").textContent=String(e.message||e)}
 }
 async function loadBidRules(){
   if(!sniperRulesSession)await syncSniperRulesFromCloud();
@@ -574,6 +592,7 @@ async function loadBidRules(){
   if(!response.ok)throw new Error(data.error||"Could not load bid rules.");
   renderBidRules(data.rules);
   refreshBidEngineStatus();
+  refreshBidMonitor();
 }
 async function saveBidRules(rules){
   if(!sniperRulesSession)await syncSniperRulesFromCloud();
@@ -583,6 +602,7 @@ async function saveBidRules(rules){
   renderBidRules(data.rules);
   refreshBidEngineStatus();
 }
+$("refreshBidMonitor").addEventListener("click",refreshBidMonitor);
 $("bidType").addEventListener("change",()=>{
   const trait=$("bidType").value==="trait";
   $("bidTraitFields").hidden=!trait;
@@ -620,6 +640,7 @@ $("bidRuleList").addEventListener("click",async e=>{
 
 renderSniperRules();
 refreshBidEngineStatus();
+setInterval(()=>{if(sniperRulesSession)refreshBidMonitor()},15000);
 
 renderSniperCollectionOptions();
 updateWindowSelection();load().then(renderSniperCollectionOptions);setInterval(()=>load().then(renderSniperCollectionOptions),30000);
