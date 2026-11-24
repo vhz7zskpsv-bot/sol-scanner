@@ -463,12 +463,13 @@ function getSniperExecutionReadiness() {
     tensorLegacyBuyInstructionAvailable: tensorExports.getBuyLegacyInstructionAsync,
     tensorCompressedBuyInstructionAvailable: tensorExports.getBuyCompressedInstructionAsync,
     tensorTransactionSimulationHelperAvailable: tensorExports.simulateTxWithIxs,
-    transactionSimulationImplemented: false,
+    transactionSimulationImplemented: true,
     jitoBundleSubmissionImplemented: false,
     marketplaceBuyExecutorImplemented: false
   };
+  const optionalSdkChecks = new Set(["tensorLegacySdkInstalled", "tensorCompressedNftSdkInstalled"]);
   const blockers = Object.entries(checks)
-    .filter(([name, passed]) => !passed)
+    .filter(([name, passed]) => !passed && !optionalSdkChecks.has(name))
     .map(([name]) => name);
   return {
     mode: "read-only-readiness-check",
@@ -479,7 +480,8 @@ function getSniperExecutionReadiness() {
     checks,
     tensorExports,
     blockers,
-    note: "This endpoint only inspects installed SDK exports and configuration. It never creates, signs, or submits a transaction. Tensor SDK support is listing-standard-specific; Magic Eden instruction generation requires MAGIC_EDEN_API_KEY."
+    optionalSdkChecks: ["tensorLegacySdkInstalled", "tensorCompressedNftSdkInstalled"],
+    note: "The unified Tensor Marketplace SDK provides legacy and compressed buy-instruction functions; the separate older SDK packages are optional. A legacy Tensor listing simulation endpoint is implemented and uses unsigned RPC simulation only. It never signs or submits a transaction. Magic Eden instruction generation requires MAGIC_EDEN_API_KEY."
   };
 }
 
