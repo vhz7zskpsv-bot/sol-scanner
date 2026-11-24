@@ -625,6 +625,224 @@ async function simulateTensorLegacyListing(mint) {
   }
 }
 
+
+
+function encodeBase58(bytes) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let number = BigInt("0x" + Buffer.from(bytes).toString("hex"));
+  let out = "";
+  while (number > 0n) {
+    const digit = Number(number % 58n);
+    out = alphabet[digit] + out;
+    number /= 58n;
+  }
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    out = "1" + out;
+  }
+  return out || "1";
+}
+
+function decodeTensorCoreListData(encoded) {
+  const bytes = decodeBase58(encoded);
+  const discriminator = Buffer.from([173, 76, 167, 125, 118, 71, 1, 153]);
+  if (bytes.length < 16 || !bytes.subarray(0, 8).equals(discriminator)) return null;
+  const amount = bytes.readBigUInt64LE(8);
+  let offset = 16;
+  const readOption = (size) => {
+    if (offset >= bytes.length) throw new Error("Truncated Core listing instruction data.");
+    const tag = bytes[offset++];
+    if (tag === 0) return null;
+    if (tag !== 1 || offset + size > bytes.length) throw new Error("Malformed Core listing option data.");
+    const value = bytes.subarray(offset, offset + size);
+    offset += size;
+    return value;
+  };
+  readOption(8); // expiry
+  readOption(32); // currency; non-SOL listings are rejected below
+  const privateTaker = readOption(32);
+  const makerBroker = readOption(32);
+  return {
+    amount,
+    privateTaker: privateTaker ? encodeBase58(privateTaker) : null,
+    makerBroker: makerBroker ? encodeBase58(makerBroker) : null
+  };
+}
+
+async function findActiveTensorCoreListing(rpc, tensor, mintAddress, mint) {
+  const [listStateAddress] = await tensor.findAssetListStatePda({ asset: mintAddress });
+  const state = await tensor.fetchMaybeAssetListState(rpc, listStateAddress);
+  if (!state || !state.exists) throw new Error("No active Tensor Core listing-state account exists for this asset.");
+  const signatures = await heliusRpc("getSignaturesForAddress", [
+    listStateAddress, { limit: 20, commitment: "confirmed" }
+  ]);
+  for (const entry of signatures || []) {
+    if (!entry.signature) continue;
+    const tx = await heliusRpc("getTransaction", [
+      entry.signature,
+      { encoding: "jsonParsed", commitment: "confirmed", maxSupportedTransactionVersion: 0 }
+    ]);
+    const instructions = tx?.transaction?.message?.instructions || [];
+    for (const ix of instructions) {
+      if (ix.programId !== "TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp" || !ix.data) continue;
+      const listing = decodeTensorCoreListData(ix.data);
+      if (!listing) continue;
+      const accounts = (ix.accounts || []).map(a => typeof a === "string" ? a : a.pubkey);
+      if (!accounts.includes(listStateAddress) || !accounts.includes(mint)) continue;
+      if (listing.privateTaker) throw new Error("This Core listing is private-taker restricted; safe public simulation is refused.");
+      if (listing.amount <= 0n) throw new Error("Core listing contains an invalid price.");
+      if (listing.amount > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Core listing price exceeds safe numeric range.");
+      return {
+        listStateAddress, amount: listing.amount, makerBroker: listing.makerBroker,
+        signature: entry.signature, accounts
+      };
+    }
+  }
+  throw new Error("The active Core listing PDA exists, but its matching Tensor listCore transaction could not be decoded. No buy instruction was built.");
+}
+
+async function simulateTensorCoreListing(mint) {
+  let stage = "initialization";
+  try {
+    if (!getSniperSignerStatus().signerConfigured) throw new Error("Dedicated sniper signer is not verified.");
+    if (!HELIUS_RPC) throw new Error("Solana RPC is not configured.");
+    stage = "loading Tensor SDK";
+    const web3 = require("@solana/web3.js");
+    const tensor = require("@tensor-foundation/marketplace");
+    const common = require("@tensor-foundation/common-helpers");
+    if (typeof tensor.getBuyCoreInstructionAsync !== "function" ||
+        typeof tensor.findAssetListStatePda !== "function" ||
+        typeof tensor.fetchMaybeAssetListState !== "function") {
+      throw new Error("Installed Tensor SDK does not expose the required Core listing and buy functions.");
+    }
+    stage = "loading dedicated signer";
+    const secret = signerKeyBytes(process.env.SNIPER_WALLET_PRIVATE_KEY);
+    const seed = secret.subarray(0, 32);
+    const publicKey = deriveEd25519PublicKey(seed);
+    const secret64 = secret.length === 64 ? secret : Buffer.concat([seed, publicKey]);
+    const signer = await web3.createKeyPairSignerFromBytes(new Uint8Array(secret64), false);
+    if (signer.address !== EXPECTED_SNIPER_WALLET) throw new Error("SDK signer address does not match the configured sniper wallet.");
+
+    stage = "reading asset through Helius DAS";
+    const asset = await heliusRpc("getAsset", { id: mint });
+    if (!asset || asset.interface !== "MplCoreAsset") {
+      throw new Error("This endpoint only handles Helius DAS MplCoreAsset NFTs; detected interface: " + String(asset?.interface || "not found"));
+    }
+    const mintAddress = web3.address(mint);
+    const rpc = web3.createSolanaRpc(HELIUS_RPC);
+    stage = "verifying active Tensor Core listing and decoding its on-chain terms";
+    const listing = await findActiveTensorCoreListing(rpc, tensor, mintAddress, mint);
+
+    const owner = String(asset.ownership?.owner || "");
+    if (!owner) throw new Error("Helius DAS did not return the current Core asset owner.");
+    const listIx = listing.accounts;
+    if (listIx[3] && listIx[3] !== owner) {
+      throw new Error("Tensor listing owner does not match the current Helius DAS asset owner; listing may be stale or transferred.");
+    }
+    const collection = (asset.grouping || []).find(g => g.group_key === "collection")?.group_value || null;
+    const symbol = String(asset.content?.metadata?.symbol || "").trim();
+    if (!symbol) throw new Error("Core asset metadata has no collection symbol; refusing to guess which saved rule applies.");
+    const matchingRule = persistedSniperRules.find(rule => rule.enabled && rule.symbol.toLowerCase() === symbol.toLowerCase());
+    if (!matchingRule) throw new Error("No enabled sniper rule matches Core asset collection symbol " + symbol + ".");
+    const attributes = asset.content?.metadata?.attributes || [];
+    if (matchingRule.trait) {
+      const trait = attributes.find(a => String(a.trait_type || "").toLowerCase() === matchingRule.trait.toLowerCase());
+      const allowed = matchingRule.traitValues || [];
+      if (!trait || !allowed.length || !allowed.some(v => String(v).toLowerCase() === String(trait.value).toLowerCase())) {
+        throw new Error("Core NFT does not match the saved trait filter.");
+      }
+    }
+
+    const priceLamports = listing.amount;
+    const priceSol = Number(priceLamports) / 1e9;
+    if (!Number.isFinite(priceSol) || priceSol <= 0) throw new Error("Invalid Core listing price.");
+    if (priceSol > 0.02) throw new Error("Listing price exceeds your 0.02 SOL maximum.");
+    if (priceSol < matchingRule.minPrice || priceSol > matchingRule.maxPrice || priceSol > matchingRule.maxSpend) {
+      throw new Error("Core listing price is outside the enabled collection rule's price or spend limits.");
+    }
+
+    const royaltyBps = Number(asset.royalty?.basis_points ?? 0);
+    if (!Number.isFinite(royaltyBps) || royaltyBps < 0 || royaltyBps > 10000) {
+      throw new Error("Helius DAS returned invalid Core royalty basis points.");
+    }
+    const royaltyLamports = (priceLamports * BigInt(Math.round(royaltyBps)) + 9999n) / 10000n;
+    const marketFeeLamports = (priceLamports * 2n + 99n) / 100n;
+    const maxAmount = priceLamports + royaltyLamports + marketFeeLamports;
+    const estimatedTotalSol = Number(maxAmount) / 1e9;
+    const balance = await heliusRpc("getBalance", [signer.address, { commitment: "confirmed" }]);
+    const balanceLamports = BigInt(balance?.value || 0);
+    const reserveLamports = 2_000_000n;
+    if (maxAmount + reserveLamports > balanceLamports) {
+      throw new Error("Estimated listing price + 2% Tensor taker fee + full royalty exceeds spendable wallet balance after a 0.002 SOL reserve.");
+    }
+
+    const creators = (asset.creators || []).filter(c => c.address).map(c => web3.address(c.address));
+    if (!creators.length) throw new Error("Helius DAS returned no creator addresses; royalty accounts cannot be safely constructed.");
+    stage = "building unsigned Tensor Core buy instruction";
+    const buyIx = await tensor.getBuyCoreInstructionAsync({
+      asset: mintAddress,
+      ...(collection ? { collection: web3.address(collection) } : {}),
+      payer: signer,
+      buyer: signer.address,
+      owner: web3.address(owner),
+      takerBroker: signer.address,
+      ...(listing.makerBroker ? { makerBroker: web3.address(listing.makerBroker) } : {}),
+      maxAmount,
+      creators
+    });
+
+    stage = "simulating unsigned Core buy transaction";
+    const simulation = await common.simulateTxWithIxs(rpc, [buyIx], signer);
+    const value = simulation?.value || {};
+    return {
+      mode: "unsigned-tensor-core-simulation",
+      standard: "MplCoreAsset",
+      mint,
+      collectionSymbol: symbol,
+      walletAddress: signer.address,
+      listingPriceSol: priceSol,
+      estimatedRoyaltySol: Number(royaltyLamports) / 1e9,
+      estimatedTensorFeeSol: Number(marketFeeLamports) / 1e9,
+      estimatedTotalSol,
+      walletBalanceSol: Number(balanceLamports) / 1e9,
+      listingSignature: listing.signature,
+      rule: { minPrice: matchingRule.minPrice, maxPrice: matchingRule.maxPrice, maxSpend: matchingRule.maxSpend, trait: matchingRule.trait || null },
+      simulationPassed: !value.err,
+      simulationError: value.err || null,
+      unitsConsumed: value.unitsConsumed ?? null,
+      logs: Array.isArray(value.logs) ? value.logs.slice(-30) : [],
+      transactionSigned: false,
+      transactionSubmitted: false,
+      solSpent: false,
+      note: "Core unsigned RPC simulation only. No signature, transaction submission, Jito tip, or SOL spend. A live executor is not enabled."
+    };
+  } catch (error) {
+    const detail = String(error?.message || error || "unknown error").slice(0, 200);
+    throw new Error("Core dry-run failed during " + stage + ": " + detail);
+  }
+}
+
+app.post("/api/sniper/tensor/simulate-core", requireSniperRulesSession, async (req, res) => {
+  try {
+    const mint = String(req.body?.mint || "").trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) {
+      return res.status(400).json({ error: "Enter a valid Solana NFT asset address." });
+    }
+    const result = await simulateTensorCoreListing(mint);
+    res.status(result.simulationPassed ? 200 : 422).json(result);
+  } catch (error) {
+    res.status(400).json({
+      mode: "unsigned-tensor-core-simulation",
+      simulationPassed: false,
+      transactionSigned: false,
+      transactionSubmitted: false,
+      solSpent: false,
+      error: String(error.message || "Tensor Core simulation failed").slice(0, 260)
+    });
+  }
+});
+
+
 app.post("/api/sniper/tensor/simulate-legacy", requireSniperRulesSession, async (req, res) => {
   try {
     const mint = String(req.body?.mint || "").trim();
