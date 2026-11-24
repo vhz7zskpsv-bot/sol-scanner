@@ -424,15 +424,19 @@ async function pollNewMints() {
 
 function getSniperExecutionReadiness() {
   const signer = getSniperSignerStatus();
-  let solanaWeb3Installed = false;
-  try { require.resolve("@solana/web3.js"); solanaWeb3Installed = true; } catch {}
-  let tensorSwapSdkInstalled = false;
-  let tensorCompressedSdkInstalled = false;
-  try { require.resolve("@tensor-oss/tensorswap-sdk"); tensorSwapSdkInstalled = true; } catch {}
-  try { require.resolve("@tensor-oss/tcomp-sdk"); tensorCompressedSdkInstalled = true; } catch {}
+  const packageInstalled = (name) => {
+    try { require.resolve(name); return true; } catch { return false; }
+  };
+  const solanaWeb3Installed = packageInstalled("@solana/web3.js");
+  const tensorMarketplaceSdkInstalled = packageInstalled("@tensor-foundation/marketplace");
+  const tensorCommonHelpersInstalled = packageInstalled("@tensor-foundation/common-helpers");
+  const tensorSwapSdkInstalled = packageInstalled("@tensor-oss/tensorswap-sdk");
+  const tensorCompressedSdkInstalled = packageInstalled("@tensor-oss/tcomp-sdk");
   const magicEdenInstructionKeyConfigured = Boolean(process.env.MAGIC_EDEN_API_KEY);
   const checks = {
     dedicatedWalletSignerVerified: signer.signerConfigured,
+    tensorMarketplaceSdkInstalled,
+    tensorCommonHelpersInstalled,
     tensorLegacySdkInstalled: tensorSwapSdkInstalled,
     tensorCompressedNftSdkInstalled: tensorCompressedSdkInstalled,
     magicEdenInstructionApiKeyConfigured: magicEdenInstructionKeyConfigured,
