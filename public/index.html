@@ -50,9 +50,9 @@
     <button class="sniper-action" id="connectWallet" type="button">Connect Phantom wallet</button>
     <div class="wallet-status"><b>Auto-Buy: locked until secure signer setup</b><div class="sniper-note">Your collection, trait, price, budget and tip settings can be prepared here. Unattended purchases are not enabled yet; wallet connection alone cannot safely authorize background signing.</div></div>
     <button class="sniper-action" id="saveSniperRules" type="button">OK · Enable this collection rule</button>
-    <div class="sniper-note" style="margin-top:12px">Your collection rules are stored separately below. Rule ON means enabled in this browser; live listing monitoring and automatic purchases are not active yet.</div>
+    <div class="sniper-note" style="margin-top:12px">Your collection rules are saved to Railway cloud storage after signing with your dedicated sniper wallet. Rule ON does not activate purchases.</div>
     <div id="sniperRuleList" class="sniper-rule-list"><div class="empty">No collection rules saved yet.</div></div>
-    <div class="sniper-note" id="sniperSaveStatus">Settings stay in this browser. Jito tip is separate from the network priority fee; a higher tip may help inclusion but cannot guarantee the fastest transaction.</div>
+    <div class="sniper-note" id="sniperSaveStatus">Cloud rules are stored on Railway persistent volume. Wallet message signatures authorize settings only; no transaction is signed. Jito tip is separate from the network priority fee.</div>
   </article>
 </section>
 <section class="section-grid"><article class="panel"><div class="panel-head"><h3>🏆 Top Collections</h3><span class="muted" id="source">Magic Eden</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>COLLECTION</th><th>FLOOR</th><th>HIGHEST BID</th><th id="volumeHeading">VOLUME · 5M</th></tr></thead><tbody id="collections"><tr><td colspan="5" class="empty">Loading collections…</td></tr></tbody></table></div></article>
@@ -370,14 +370,20 @@ $("sniperCollectionSearch").addEventListener("input",()=>{
 $("liveSaleMatches").addEventListener("click",e=>{const b=e.target.closest("[data-live-symbol]");if(b)loadLiveSales(b.dataset.liveSymbol)});
 $("sniperCollection").addEventListener("change",e=>{const c=rows.find(x=>x.symbol===e.target.value)||collectionSearchMap.get(e.target.value);if(c){$("liveSaleSearch").value=c.name;loadLiveSales(c.symbol)}});
 $("jitoTip").addEventListener("change",e=>{$("customTipWrap").hidden=e.target.value!=="custom"});
+let sniperWalletProvider=null;
+let sniperRulesSession=null;
+let connectedSniperWallet="";
 $("connectWallet").addEventListener("click",async()=>{
   try{
     const provider=window.solana;
-    if(!provider||!provider.isPhantom){$("walletStatus").textContent="Phantom not detected";$("walletAddress").textContent="Open this page in the Phantom in-app browser or install Phantom.";return}
+    if(!provider||!provider.isPhantom){$("walletStatus").textContent="Phantom not detected";$("walletAddress").textContent="Open this page in Phantom's in-app browser to connect the dedicated sniper wallet.";return}
     const result=await provider.connect();
     const address=result.publicKey?.toString()||provider.publicKey?.toString()||"";
+    sniperWalletProvider=provider;
+    connectedSniperWallet=address;
+    sniperRulesSession=null;
     $("walletStatus").textContent="Wallet connected · "+address.slice(0,6)+"…"+address.slice(-5);
-    $("walletAddress").textContent="Connected public address only. This does not enable background signing or expose your private key.";
+    $("walletAddress").textContent="Cloud rule sync requires a signature from the dedicated sniper wallet. No transaction or payment is requested.";
     $("connectWallet").textContent="Phantom connected";
   }catch(e){$("walletStatus").textContent="Wallet connection cancelled";$("walletAddress").textContent=String(e.message||e)}
 });
@@ -386,19 +392,60 @@ function readSniperRules(){
   try{const raw=JSON.parse(localStorage.getItem(SNIPER_RULES_KEY)||"[]");return Array.isArray(raw)?raw:(raw&&raw.symbol?[{...raw,enabled:true}]:[])}catch{return []}
 }
 function writeSniperRules(rules){localStorage.setItem(SNIPER_RULES_KEY,JSON.stringify(rules))}
+async function authorizeSniperRules(){
+  if(!sniperWalletProvider||!connectedSniperWallet)throw new Error("Pehle dedicated sniper wallet Phantom se connect karo.");
+  const challengeResponse=await fetch("/api/sniper/rules/auth/challenge?wallet="+encodeURIComponent(connectedSniperWallet));
+  const challenge=await challengeResponse.json();
+  if(!challengeResponse.ok)throw new Error(challenge.error||"Wallet authorization challenge failed.");
+  if(typeof sniperWalletProvider.signMessage!=="function")throw new Error("This Phantom version does not support message signing. Update Phantom and retry.");
+  const signed=await sniperWalletProvider.signMessage(new TextEncoder().encode(challenge.message),"utf8");
+  const signatureBytes=signed.signature||signed;
+  const signature=btoa(String.fromCharCode(...new Uint8Array(signatureBytes)));
+  const verifiedResponse=await fetch("/api/sniper/rules/auth/verify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({wallet:connectedSniperWallet,signature})});
+  const verified=await verifiedResponse.json();
+  if(!verifiedResponse.ok)throw new Error(verified.error||"Wallet signature verification failed.");
+  sniperRulesSession=verified.token;
+  return sniperRulesSession;
+}
+async function syncSniperRulesFromCloud(){
+  if(!sniperRulesSession)await authorizeSniperRules();
+  const response=await fetch("/api/sniper/rules",{headers:{Authorization:"Bearer "+sniperRulesSession}});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Could not load cloud rules.");
+  const localRules=readSniperRules();
+  if(Array.isArray(data.rules)&&data.rules.length){
+    writeSniperRules(data.rules);renderSniperRules();
+  }else if(localRules.length){
+    const saved=await fetch("/api/sniper/rules",{method:"PUT",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({rules:localRules})});
+    const savedData=await saved.json();
+    if(!saved.ok)throw new Error(savedData.error||"Could not migrate local rules to cloud.");
+  }else{
+    writeSniperRules([]);renderSniperRules();
+  }
+}
+async function persistSniperRules(rules){
+  writeSniperRules(rules);
+  if(!sniperRulesSession)await syncSniperRulesFromCloud();
+  const response=await fetch("/api/sniper/rules",{method:"PUT",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({rules})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Cloud rule save failed.");
+  writeSniperRules(data.rules||rules);
+  renderSniperRules();
+}
 function renderSniperRules(){
   const rules=readSniperRules(),box=$("sniperRuleList");
   if(!rules.length){box.innerHTML='<div class="empty">No collection rules saved yet.</div>';return}
   box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
 }
-$("sniperRuleList").addEventListener("click",e=>{
+$("sniperRuleList").addEventListener("click",async e=>{
   const toggle=e.target.closest("[data-rule-toggle]"),remove=e.target.closest("[data-rule-remove]");
   const rules=readSniperRules();
   if(toggle){const i=Number(toggle.dataset.ruleToggle);if(rules[i])rules[i].enabled=!rules[i].enabled}
   if(remove){const i=Number(remove.dataset.ruleRemove);if(rules[i])rules.splice(i,1)}
-  try{writeSniperRules(rules);renderSniperRules()}catch{$("sniperSaveStatus").textContent="Could not update saved rules in this browser."}
+  try{await persistSniperRules(rules);$("sniperSaveStatus").textContent="Cloud rules updated on Railway persistent storage. Auto-Buy remains locked."}
+  catch(error){$("sniperSaveStatus").textContent=error.message}
 });
-$("saveSniperRules").addEventListener("click",()=>{
+$("saveSniperRules").addEventListener("click",async()=>{
   const symbol=$("sniperCollection").value;
   if(!symbol){$("sniperSaveStatus").textContent="Pehle collection select karo.";return}
   const min=Number($("sniperMin").value||0),max=Number($("sniperMax").value||0),budget=Number($("sniperBudget").value||0);
@@ -410,9 +457,10 @@ $("saveSniperRules").addEventListener("click",()=>{
   try{
     const rules=readSniperRules(),index=rules.findIndex(r=>r.symbol===symbol);
     if(index>=0)rules[index]=rule;else rules.push(rule);
-    writeSniperRules(rules);renderSniperRules();
-    $("sniperSaveStatus").textContent=rule.name+" rule saved and switched ON. Live monitoring/Auto-Buy is still locked pending the secure execution setup.";
-  }catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
+    $("sniperSaveStatus").textContent="Sign a message with your dedicated sniper wallet to save rules to Railway…";
+    await persistSniperRules(rules);
+    $("sniperSaveStatus").textContent=rule.name+" rule saved to Railway persistent storage and switched ON. Auto-Buy remains locked.";
+  }catch(error){$("sniperSaveStatus").textContent=error.message}
 });
 renderSniperRules();
 
