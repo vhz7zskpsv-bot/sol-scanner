@@ -1166,6 +1166,70 @@ app.get("/api/collection/:symbol/stats", async (req, res) => {
   }
 });
 
+
+const tensorCollectionCache = new Map();
+async function tensorApiGet(route) {
+  const key = process.env.TENSOR_API_KEY;
+  if (!key) throw new Error("Tensor API key is not configured in Railway. Magic Eden links work without it; Tensor collection lookup/traits need TENSOR_API_KEY.");
+  const response = await fetch("https://api.mainnet.tensordev.io/api/v1" + route, {
+    headers: { accept: "application/json", "x-tensor-api-key": key },
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error("Tensor API returned " + response.status + ". Check the Tensor API key and collection link.");
+  return response.json();
+}
+app.get("/api/marketplace/collection-link", async (req, res) => {
+  try {
+    const marketplace = String(req.query.marketplace || "").toLowerCase();
+    const slug = String(req.query.slug || "").trim();
+    if (!slug || slug.length > 160 || !["magiceden", "tensor"].includes(marketplace)) {
+      return res.status(400).json({ error: "Paste a valid Magic Eden or Tensor collection link." });
+    }
+    if (marketplace === "tensor") {
+      const cacheKey = "tensor:" + slug;
+      const cached = tensorCollectionCache.get(cacheKey);
+      if (cached && Date.now() - cached.at < 10 * 60 * 1000) return res.json({ collection: cached.collection, source: "Tensor" });
+      const raw = await tensorApiGet("/collections/find?query=" + encodeURIComponent(slug));
+      const candidates = Array.isArray(raw) ? raw : (raw.collections || raw.results || (raw.collection ? [raw.collection] : []));
+      const match = candidates.find(c => c.slugDisplay === slug || c.slugMe === slug || c.symbol === slug) || candidates[0];
+      if (!match) return res.status(404).json({ error: "Tensor could not resolve this collection link. Check the copied collection URL." });
+      const collection = {
+        symbol: String(match.slugDisplay || match.slugMe || match.symbol || slug),
+        name: match.name || match.slugDisplay || slug,
+        collId: match.collId || null,
+        coreCollectionAddress: String(match.tokenProgram || "").toUpperCase() === "MPL_CORE" ? (match.collId || "") : "",
+        tokenStandard: match.tokenStandard || "",
+        source: "Tensor"
+      };
+      tensorCollectionCache.set(cacheKey, { collection, at: Date.now() });
+      return res.json({ collection, source: "Tensor" });
+    }
+    const stats = await meGet("/collections/" + encodeURIComponent(slug) + "/stats");
+    const collection = {
+      symbol: slug,
+      name: stats.name || stats.symbol || slug,
+      floorPrice: sol(stats.floorPrice),
+      listedCount: stats.listedCount ?? null,
+      volume24h: sol(stats.volume24hr ?? stats.volume24h),
+      highestBid: sol(stats.highestBid ?? stats.highestOffer),
+      source: "Magic Eden"
+    };
+    return res.json({ collection, source: "Magic Eden" });
+  } catch (error) {
+    res.status(502).json({ error: error.message });
+  }
+});
+app.get("/api/marketplace/collection/:slug/attributes", async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "").trim();
+    const raw = await tensorApiGet("/collections/traits?collId=" + encodeURIComponent(slug));
+    const attributes = raw.attributes || raw.traits || raw;
+    res.json({ attributes, source: "Tensor" });
+  } catch (error) {
+    res.status(502).json({ attributes: [], error: error.message });
+  }
+});
+
 const coreCollectionTraitsCache = new Map();
 const coreCollectionTraitsBusy = new Map();
 app.get("/api/core/collection/:address/attributes", async (req, res) => {
