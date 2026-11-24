@@ -228,25 +228,40 @@ async function pollNewMints() {
     if (!Array.isArray(parsed)) throw new Error("Unexpected Helius parsed-transactions response");
     for (let i = 0; i < fresh.length; i++) seenMintSignatures.add(fresh[i].signature);
     for (const tx of parsed) {
-      const txType = String(tx.type || tx.parsed?.type || "").toUpperCase();
-      const nftEvents = [].concat(tx.events?.nft || tx.events?.nfts || tx.parsed?.events?.nft || []);
-      const tokenTransfers = [].concat(tx.tokenTransfers || tx.events?.tokenTransfers || tx.parsed?.tokenTransfers || []);
-      if (!txType.includes("MINT") && !nftEvents.length) continue;
-      const candidates = nftEvents.length ? nftEvents : tokenTransfers;
+      const txType = String(tx.type || tx.parsed?.type || tx.parsed?.summary?.type || "").toUpperCase();
+      // Never infer NFTs from generic SPL token transfers: require Helius' explicit NFT mint classification.
+      if (txType !== "NFT_MINT" && txType !== "COMPRESSED_NFT_MINT") continue;
+
+      const tokenTransfers = Array.isArray(tx.tokenTransfers) ? tx.tokenTransfers : [];
+      const nftEvent = tx.events?.nft || tx.parsed?.events?.nft || {};
+      const nftEventItems = Array.isArray(nftEvent) ? nftEvent : (Array.isArray(nftEvent.nfts) ? nftEvent.nfts : [nftEvent]);
+      const compressedEvents = [].concat(tx.events?.compressed || tx.parsed?.events?.compressed || []);
+      const candidates = txType === "COMPRESSED_NFT_MINT"
+        ? compressedEvents
+        : [...nftEventItems, ...tokenTransfers];
+
       for (const nft of candidates) {
-        const mint = nft.mint || nft.mintAddress || nft.tokenMint || nft.address;
-        if (!mint) continue;
+        const decimals = nft.decimals ?? nft.tokenDecimals;
+        const amount = nft.tokenAmount ?? nft.amount;
+        const standard = String(nft.tokenStandard || nft.standard || "").toLowerCase();
+        if ((decimals != null && Number(decimals) !== 0) ||
+            (amount != null && Number(amount) > 1) ||
+            standard.includes("fungible")) continue;
+
+        const mint = nft.mint || nft.mintAddress || nft.tokenMint || nft.assetId || nft.address;
+        if (!mint || recentMints.has(mint)) continue;
         const blockTime = Number(tx.timestamp || tx.blockTime || tx.parsed?.timestamp || Date.now() / 1000);
-        const event = {
+        const metadata = nft.metadata || nft.content?.metadata || {};
+        recentMints.set(mint, {
           mint,
-          name: nft.name || nft.metadata?.name || nft.content?.metadata?.name || "New NFT mint",
-          symbol: nft.symbol || nft.metadata?.symbol || "",
+          name: nft.name || metadata.name || nft.content?.metadata?.name || "New NFT mint",
+          symbol: nft.symbol || metadata.symbol || "",
           collection: nft.collection?.name || nft.collectionName || "",
-          signature: tx.signature || fresh.find(x => !recentMints.has(mint))?.signature || "",
+          signature: tx.signature || "",
           time: Number.isFinite(blockTime) ? blockTime * 1000 : Date.now(),
-          source: "Helius Mainnet"
-        };
-        if (!recentMints.has(mint)) recentMints.set(mint, event);
+          source: "Helius Mainnet",
+          standard: txType === "COMPRESSED_NFT_MINT" ? "Compressed NFT" : "NFT"
+        });
       }
     }
     while (seenMintSignatures.size > 5000) seenMintSignatures.delete(seenMintSignatures.values().next().value);
@@ -312,7 +327,7 @@ app.get("/api/new-mints", (_req, res) => {
     source: "Helius Mainnet",
     lastPollAt: lastMintPollAt,
     warning: mintPollError,
-    note: "Recent mint transactions involving the Metaplex Token Metadata program; not a complete index of every Solana token launch."
+    note: "Only Helius-classified NFT_MINT and COMPRESSED_NFT_MINT transactions are shown; generic SPL TOKEN_MINT events are excluded. This is not a complete mint index."
   });
 });
 
