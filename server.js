@@ -343,7 +343,11 @@ async function pollNewMints() {
   }
 }
 
-app.get("/api/sniper/status", (_req, res) => {\n  res.json(getSniperSignerStatus());\n});\n\napp.get("/api/health", async (_req, res) => {
+app.get("/api/sniper/status", (_req, res) => {
+  res.json(getSniperSignerStatus());
+});
+
+app.get("/api/health", async (_req, res) => {
   let helius = "not_configured";
   if (HELIUS_RPC) {
     try {
