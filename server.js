@@ -86,7 +86,16 @@ async function pollTensorSales() {
         if(String(tx.source||"").toUpperCase()!=="TENSOR"||String(tx.type||"").toUpperCase()!=="NFT_SALE")continue;
         const nft=tx.events?.nft||{},amount=Number(nft.amount??nft.saleAmount),timestamp=Number(tx.timestamp||nft.timestamp),id=tx.signature;
         if(!id||!Number.isFinite(amount)||amount<=0||!Number.isFinite(timestamp)||timestamp<=0)continue;
-        tensorSales.set(id,{id,time:timestamp*1000,price:amount/1e9});
+        const first=(Array.isArray(nft.nfts)?nft.nfts:[])[0]||{},mint=first.mint||first.assetId||"";
+        let asset=null,assetName="",symbol="",collection="";
+        if(mint){try{asset=await heliusRpc("getAsset",{id:mint});}catch{}}
+        const metadata=asset?.content?.metadata||{};
+        assetName=metadata.name||asset?.content?.files?.[0]?.name||"";
+        const grouping=Array.isArray(asset?.grouping)?asset.grouping.find(x=>x.group_key==="collection"):null;
+        symbol=asset?.content?.metadata?.symbol||"";
+        collection=grouping?.group_value||symbol||"Tensor";
+        const price=amount>100000?amount/1e9:amount;
+        tensorSales.set(id,{id,name:assetName||"NFT",symbol,collection,mint,time:timestamp*1000,price,marketplace:"Tensor",signature:id});
       }
     }
     trimMap(seenTensor,10000);trimMap(tensorSales,500,Date.now()-12*60*60*1000);
@@ -120,7 +129,7 @@ function volumeWindow(map,minutes){
 }
 const windows=()=>({"5m":5,"10m":10,"15m":15,"1h":60,"4h":240,"6h":360,"12h":720});
 
-app.get("/api/health",(_req,res)=>res.json({ok:true,marketplace:"Magic Eden",helius:HELIUS_API_KEY?"configured":"missing",timestamp:new Date().toISOString(),lastPollAt:magicLastPollAt,warning:magicPollError}));
+app.get("/api/health",(_req,res)=>res.json({ok:true,marketplaces:["Magic Eden","Tensor"],helius:HELIUS_API_KEY?"configured":"missing",tensorApi:"not_configured",timestamp:new Date().toISOString(),lastPollAt:magicLastPollAt,warning:magicPollError,tensorLastPollAt,tensorWarning:tensorPollError}));
 app.get("/api/collections",async(_req,res)=>{
   try{
     if(collectionsCache&&Date.now()-collectionsCacheAt<60000)return res.json(collectionsCache);
@@ -152,7 +161,7 @@ app.get("/api/collection/:symbol/listings",async(req,res)=>{
   try{const limit=Math.min(100,Math.max(1,Number(req.query.limit||50))),offset=Math.max(0,Number(req.query.offset||0));const data=await meGet("/collections/"+encodeURIComponent(req.params.symbol)+"/listings?offset="+offset+"&limit="+limit+"&sort=listPrice&sort_direction=asc&listingAggMode=true");res.json({listings:Array.isArray(data)?data:[],source:"Magic Eden"});}
   catch(error){res.status(502).json({listings:[],error:error.message});}
 });
-app.get("/api/live-sales",(_req,res)=>res.json({sales:[...globalSales.values()].sort((a,b)=>b.time-a.time).slice(0,100),source:"Magic Eden on-chain via Helius",lastPollAt:magicLastPollAt,warning:magicPollError,note:"Observed sales since this monitor started; not historical backfill."}));
+app.get("/api/live-sales",(_req,res)=>{const sales=[...globalSales.values(),...tensorSales.values()].sort((a,b)=>b.time-a.time).slice(0,100);res.json({sales,source:"Magic Eden + Tensor on-chain via Helius",lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,note:"Observed sales since this monitor started; not historical backfill. Tensor floor and bid quotes require Tensor API access."});});
 app.get("/api/new-mints",(_req,res)=>res.json({mints:[...recentMints.values()].sort((a,b)=>b.time-a.time),source:"Helius Mainnet",lastPollAt:mintLastPollAt,warning:mintPollError,note:"Only Helius-classified NFT mint transactions are shown; this is not a complete mint index."}));
 app.get("/api/collection-mints",async(req,res)=>{
   try{
@@ -180,8 +189,9 @@ app.get("/api/collection-mints",async(req,res)=>{
   }catch(error){res.status(502).json({collections:[],error:error.message,warning:"Could not retrieve collection mint details."});}
 });
 app.get("/api/volume",(_req,res)=>{
-  const result={};for(const [label,mins] of Object.entries(windows()))result[label]=volumeWindow(globalSales,mins);
-  res.json({windows:result,lastPollAt:magicLastPollAt,warning:magicPollError,source:"Observed Magic Eden sales"});
+  const combined=new Map([...globalSales,...tensorSales]),result={};
+  for(const [label,mins] of Object.entries(windows()))result[label]=volumeWindow(combined,mins);
+  res.json({windows:result,lastPollAt:magicLastPollAt,tensorLastPollAt,warning:magicPollError,tensorWarning:tensorPollError,source:"Observed Magic Eden + Tensor sales"});
 });
 app.get("/api/tensor/volume",(_req,res)=>{
   const result={};for(const [label,mins] of Object.entries(windows()))result[label]=volumeWindow(tensorSales,mins);
