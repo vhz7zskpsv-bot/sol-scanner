@@ -273,7 +273,7 @@ async function pollTensorSales() {
       }
     }
     while (tensorSeenSignatures.size > 5000) tensorSeenSignatures.delete(tensorSeenSignatures.values().next().value);
-    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    const cutoff = Date.now() - 12 * 60 * 60 * 1000;
     for (const [id, sale] of tensorSales) if (sale.time < cutoff) tensorSales.delete(id);
     tensorLastPollAt = new Date().toISOString();
     tensorPollError = null;
@@ -425,7 +425,7 @@ async function pollSales() {
     if (failed) pollError = `${failed} collection activity feeds unavailable in latest batch`;
     else pollError = null;
     lastPollAt = new Date().toISOString();
-    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    const cutoff = Date.now() - 12 * 60 * 60 * 1000;
     for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
   } catch (error) {
     pollError = error.message;
@@ -1226,7 +1226,7 @@ app.get("/api/new-mints", (_req, res) => {
 });
 
 app.get("/api/volume", (_req, res) => {
-  const windows = { "5m": volumeFor(5), "15m": volumeFor(15), "1h": volumeFor(60) };
+  const windows = { "5m": volumeFor(5), "15m": volumeFor(15), "1h": volumeFor(60), "4h": volumeFor(240), "6h": volumeFor(360), "12h": volumeFor(720) };
   const perCollection = {};
   for (const symbol of tracked) {
     const recent = [...sales.values()].filter(x => x.symbol === symbol);
@@ -1235,7 +1235,7 @@ app.get("/api/volume", (_req, res) => {
       const items = recent.filter(x => x.time >= cutoff);
       return { sol: items.reduce((sum, item) => sum + item.price, 0), sales: items.length };
     };
-    perCollection[symbol] = { "5m": volume(5), "15m": volume(15), "1h": volume(60) };
+    perCollection[symbol] = { "5m": volume(5), "15m": volume(15), "1h": volume(60), "4h": volume(240), "6h": volume(360), "12h": volume(720) };
   }
   res.json({
     windows, perCollection,
@@ -1261,7 +1261,7 @@ app.get("/api/live-sales", (_req, res) => {
 
 app.get("/api/tensor/volume", (_req, res) => {
   res.json({
-    windows: { "5m": tensorVolumeFor(5), "15m": tensorVolumeFor(15), "1h": tensorVolumeFor(60) },
+    windows: { "5m": tensorVolumeFor(5), "15m": tensorVolumeFor(15), "1h": tensorVolumeFor(60), "4h": tensorVolumeFor(240), "6h": tensorVolumeFor(360), "12h": tensorVolumeFor(720) },
     lastPollAt: tensorLastPollAt,
     source: "Helius parsed on-chain Tensor Marketplace + AMM program sales",
     note: "Only confirmed NFT_SALE transactions attributed to Tensor by Helius are counted; this is observed activity since polling began, not historical backfill.",
