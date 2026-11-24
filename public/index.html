@@ -204,27 +204,37 @@ async function renderLiveSaleMatches(){
 }
 let sniperTraitMap = new Map();
 function traitRowsFromResponse(payload){
-  const root=payload?.attributes??payload?.traits??payload?.results??payload;
-  const rows=Array.isArray(root)?root:(root&&typeof root==="object"?Object.entries(root).flatMap(([traitType,values])=>{
-    if(Array.isArray(values))return values.map(v=>({traitType,value:typeof v==="object"?(v.value??v.name):v}));
-    return [];
-  }):[]);
+  const root=payload?.attributes??payload?.traits??payload?.results??payload?.data?.attributes??payload?.data?.traits??payload?.data??payload;
   const map=new Map();
   const add=(traitType,value)=>{
-    if(traitType==null||value==null||String(traitType)===""||String(value)==="")return;
-    const key=String(traitType);
+    if(traitType==null||value==null||String(traitType).trim()===""||String(value).trim()==="")return;
+    const key=String(traitType).trim();
     if(!map.has(key))map.set(key,new Set());
-    map.get(key).add(String(value));
+    map.get(key).add(String(value).trim());
   };
-  rows.forEach(row=>{
-    const traitType=row.traitType??row.trait_type??row.attribute?.traitType??row.attribute?.trait_type??row.name;
-    if(Array.isArray(row.values)){
-      row.values.forEach(v=>add(traitType,typeof v==="object"?(v.value??v.name):v));
-    }else{
-      add(traitType,row.value??row.attribute?.value);
+  const valueOf=v=>v&&typeof v==="object"?(v.value??v.name??v.traitValue??v.trait_value??v.attributeValue??v.attribute_value):v;
+  const walk=(node,inheritedType=null)=>{
+    if(node==null)return;
+    if(Array.isArray(node)){node.forEach(item=>walk(item,inheritedType));return}
+    if(typeof node!=="object"){if(inheritedType)add(inheritedType,node);return}
+    const attr=node.attribute;
+    const traitType=node.traitType??node.trait_type??node.trait??node.key??
+      (typeof attr==="string"?attr:null)??attr?.traitType??attr?.trait_type??inheritedType;
+    const values=node.values??node.attributeValues??node.attribute_values;
+    if(Array.isArray(values)){values.forEach(v=>add(traitType,valueOf(v)));return}
+    const directValue=node.value??node.traitValue??node.trait_value??node.attributeValue??node.attribute_value??attr?.value;
+    if(traitType&&directValue!=null)add(traitType,valueOf(directValue));
+    if(Array.isArray(node.attributes))node.attributes.forEach(a=>walk(a));
+    if(Array.isArray(node.traits))node.traits.forEach(a=>walk(a));
+    if(!traitType){
+      for(const [key,value] of Object.entries(node)){
+        if(["data","results","attributes","traits","items","collections"].includes(key))walk(value,inheritedType);
+        else if(Array.isArray(value))walk(value,key);
+        else if(value&&typeof value==="object")walk(value,inheritedType);
+      }
     }
-    if(Array.isArray(row.attributes))row.attributes.forEach(a=>add(a.traitType??a.trait_type,a.value));
-  });
+  };
+  walk(root);
   return map;
 }
 function renderTraitValues(){
