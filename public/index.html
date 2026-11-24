@@ -27,8 +27,8 @@
     <div class="panel-head"><h3>⚡ Live Sales Search</h3><span class="pill">MAGIC EDEN</span></div>
     <input class="search-input" id="liveSaleSearch" type="search" placeholder="Search collection or paste Magic Eden / Tensor link…" autocomplete="off">
     <div class="search-results" id="liveSaleMatches"></div>
-    <div class="sniper-note" id="liveSaleHint">Search a collection, then choose it to view its latest marketplace activity.</div>
-    <div id="liveSaleResults"><div class="empty">Choose a collection to load its latest activity.</div></div>
+    <div class="sniper-note" id="liveSaleHint">Global Magic Eden sales · all monitored collections</div>
+    <div id="liveSaleResults"><div class="empty">Loading global Magic Eden sales…</div></div>
   </article>
   <article class="panel" id="sniperPanel">
     <div class="panel-head"><h3>🎯 NFT Sniper</h3><span class="pill">SETUP</span></div>
@@ -82,7 +82,7 @@ function renderCollections(){
 function renderNew(list){$("new").innerHTML=list.slice(0,10).map(c=>'<div class="mint"><div class="avatar">✦</div><div class="mint-info"><strong>'+esc(c.name)+'</strong><small>'+esc(c.symbol||"")+'</small><small class="muted">'+(c.createdAt?new Date(c.createdAt).toLocaleDateString():"Creation date unavailable")+'</small></div><div class="price">'+fmt(c.floorPrice)+'<small class="muted"> SOL</small></div></div>').join("")||'<div class="empty">No timestamped recent collections returned by Magic Eden.</div>'}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function renderMints(list,warning){$("mints").innerHTML=list.slice(0,8).map(m=>'<div class="mint"><div class="avatar">◎</div><div class="mint-info"><strong>'+esc(m.name||"New NFT mint")+'</strong><small>'+esc(m.collection||m.symbol||m.mint||"Solana mint")+'</small></div><div class="price"><a href="https://solscan.io/token/'+encodeURIComponent(m.mint)+'" target="_blank" rel="noopener" style="color:var(--purple);text-decoration:none">View ↗</a></div></div>').join("")||(warning?'<div class="empty">'+esc(warning)+'</div>':'<div class="empty">No new NFT mint events detected yet. Scanner checks recent on-chain metadata transactions.</div>')}
-async function load(){try{const [c,n,h,v,m,t]=await Promise.all([get("/api/collections"),get("/api/new"),get("/api/health"),get("/api/volume"),get("/api/new-mints"),get("/api/tensor/volume")]);rows=c.collections||[];
+async function load(){refreshGlobalMagicEdenSales();try{const [c,n,h,v,m,t]=await Promise.all([get("/api/collections"),get("/api/new"),get("/api/health"),get("/api/volume"),get("/api/new-mints"),get("/api/tensor/volume")]);rows=c.collections||[];
 const perCollection=v.perCollection||{};
 rows.forEach(item=>{item.volumes=perCollection[item.symbol]||null;});
 renderCollections();renderNew(n.collections||[]);renderMints(m.mints||[],m.warning);$("live").textContent="API connected";$("health").textContent="Helius: "+h.helius+" · Marketplace: "+(c.error?"error":"reachable")+" · Tracking "+v.trackedCollections+" collections";$("source").textContent=c.source||"Magic Eden";const set=(id,val)=>$(id).innerHTML=val;set("v5",fmt(v.windows["5m"].sol)+" <small>SOL</small>");set("v15",fmt(v.windows["15m"].sol)+" <small>SOL</small>");set("v60",fmt(v.windows["1h"].sol)+" <small>SOL</small>");set("v5count",v.windows["5m"].sales+" observed sales");set("v15count",v.windows["15m"].sales+" observed sales");set("v60count",v.windows["1h"].sales+" observed sales");set("tv5",fmt(t.windows["5m"].sol)+" <small>SOL</small>");set("tv15",fmt(t.windows["15m"].sol)+" <small>SOL</small>");set("tv60",fmt(t.windows["1h"].sol)+" <small>SOL</small>");$("tv5count").textContent=t.windows["5m"].sales+" confirmed Tensor sales";$("tv15count").textContent=t.windows["15m"].sales+" confirmed Tensor sales";$("tv60count").textContent=t.windows["1h"].sales+" confirmed Tensor sales";}catch(e){$("live").textContent="Data unavailable";$("health").textContent=e.message;$("collections").innerHTML='<tr><td colspan="5" class="empty">'+esc(e.message)+'</td></tr>'}}function updateWindowSelection(){
@@ -348,6 +348,24 @@ async function renderSniperCollectionMatches(){
     });
   }catch(e){$("sniperCollectionMatches").innerHTML='<span class="sniper-note">'+esc(e.message)+'</span>'}
 }
+async function refreshGlobalMagicEdenSales(){
+  try{
+    const data=await get("/api/live-sales");
+    const all=data.sales||[];
+    const warning=data.warning?'<div class="sniper-note">Feed warning: '+esc(data.warning)+'</div>':"";
+    const items=all.slice(0,50).map(a=>{
+      const title=a.collection||a.symbol||"Magic Eden";
+      const when=a.time?new Date(a.time).toLocaleString():"";
+      const mint=a.mint?'<br><small class="muted">'+esc(a.mint.slice(0,8))+'…</small>':"";
+      const link=a.signature?' <a href="https://solscan.io/tx/'+encodeURIComponent(a.signature)+'" target="_blank" rel="noopener" style="color:var(--purple)">TX ↗</a>':"";
+      return '<div class="sale-item"><div><b>'+esc(title)+'</b>'+mint+'<br><small class="muted">'+esc(when)+link+'</small></div><b>'+fmt(a.price)+' SOL</b></div>';
+    }).join("");
+    $("liveSaleResults").innerHTML=warning+(items||'<div class="empty">No global Magic Eden sales observed yet. Feed starts collecting after deployment.</div>');
+    $("liveSaleHint").textContent="Global Magic Eden sales · "+all.length+" recent events · auto-refresh";
+  }catch(e){
+    $("liveSaleResults").innerHTML='<div class="empty">Global sales feed unavailable: '+esc(e.message)+'</div>';
+  }
+}
 async function loadLiveSales(symbol){
   const c=rows.find(x=>x.symbol===symbol)||collectionSearchMap.get(symbol);if(!c)return;
   liveSaleSelectedSymbol=symbol;
@@ -368,6 +386,7 @@ async function loadLiveSales(symbol){
     }).join("")||(all.length?'<div class="empty">No sale events in the latest activity returned.</div>':'<div class="empty">No recent activity returned by Magic Eden.</div>');
   }catch(e){$("liveSaleResults").innerHTML='<div class="empty">'+esc(e.message)+'</div>'}
 }
+setInterval(refreshGlobalMagicEdenSales,10000);
 $("liveSaleSearch").addEventListener("input",()=>{
   clearTimeout(liveSearchTimer);
   liveSearchTimer=setTimeout(renderLiveSaleMatches,250);
