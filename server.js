@@ -1,8 +1,17 @@
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const fs = require("fs/promises");
+const crypto = require("crypto");
 
 const app = express();
+const SNIPER_DATA_DIR = "/data";
+const SNIPER_RULES_FILE = path.join(SNIPER_DATA_DIR, "sniper-rules.json");
+const sniperChallenges = new Map();
+const sniperSessions = new Map();
+let persistedSniperRules = [];
+let sniperRulesLoaded = false;
+let sniperRulesStorageError = null;
 const PORT = Number(process.env.PORT || 3000);
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2";
 const HELIUS_RPC = process.env.HELIUS_API_KEY
@@ -102,6 +111,76 @@ function getSniperSignerStatus() {
   }
 }
 
+
+
+function normalizeSniperRules(input) {
+  if (!Array.isArray(input) || input.length > 50) throw new Error("Rules must be an array with at most 50 entries.");
+  return input.map((rule) => {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) throw new Error("Invalid rule.");
+    const symbol = String(rule.symbol || "").trim().slice(0, 100);
+    if (!symbol) throw new Error("Every rule needs a collection symbol.");
+    const minPrice = Number(rule.minPrice ?? 0);
+    const maxPrice = Number(rule.maxPrice ?? 0);
+    const maxSpend = Number(rule.maxSpend ?? 0);
+    const jitoTipSol = Number(rule.jitoTipSol ?? 0);
+    if (![minPrice, maxPrice, maxSpend, jitoTipSol].every(Number.isFinite) ||
+        minPrice < 0 || maxPrice <= 0 || minPrice > maxPrice || maxSpend <= 0 ||
+        jitoTipSol < 0 || jitoTipSol > 1) {
+      throw new Error("Invalid price, budget, or Jito tip values.");
+    }
+    const traitValues = Array.isArray(rule.traitValues)
+      ? rule.traitValues.slice(0, 100).map(v => String(v).slice(0, 120))
+      : [];
+    return {
+      symbol,
+      name: String(rule.name || symbol).slice(0, 160),
+      trait: String(rule.trait || "").slice(0, 120),
+      traitValues,
+      traitMatch: "ANY",
+      minPrice,
+      maxPrice,
+      maxSpend,
+      jitoTipSol,
+      enabled: Boolean(rule.enabled),
+      mode: "configuration-only",
+      updatedAt: Number.isFinite(Number(rule.updatedAt)) ? Number(rule.updatedAt) : Date.now()
+    };
+  });
+}
+async function loadPersistedSniperRules() {
+  await fs.access(SNIPER_DATA_DIR);
+  try {
+    const raw = await fs.readFile(SNIPER_RULES_FILE, "utf8");
+    persistedSniperRules = normalizeSniperRules(JSON.parse(raw));
+  } catch (error) {
+    if (error.code === "ENOENT") persistedSniperRules = [];
+    else throw error;
+  }
+  sniperRulesLoaded = true;
+  sniperRulesStorageError = null;
+  return persistedSniperRules;
+}
+async function savePersistedSniperRules(rules) {
+  const safeRules = normalizeSniperRules(rules);
+  await fs.access(SNIPER_DATA_DIR);
+  const tempFile = SNIPER_RULES_FILE + ".tmp";
+  await fs.writeFile(tempFile, JSON.stringify(safeRules, null, 2), { encoding: "utf8", mode: 0o600 });
+  await fs.rename(tempFile, SNIPER_RULES_FILE);
+  persistedSniperRules = safeRules;
+  sniperRulesLoaded = true;
+  sniperRulesStorageError = null;
+  return safeRules;
+}
+function requireSniperRulesSession(req, res, next) {
+  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const session = sniperSessions.get(token);
+  if (!session || session.expiresAt < Date.now() || session.wallet !== EXPECTED_SNIPER_WALLET) {
+    if (token) sniperSessions.delete(token);
+    return res.status(401).json({ error: "Wallet authorization expired. Sign in again." });
+  }
+  req.sniperWallet = session.wallet;
+  next();
+}
 
 const meHeaders = () => ({
   accept: "application/json",
@@ -343,8 +422,68 @@ async function pollNewMints() {
   }
 }
 
-app.get("/api/sniper/status", (_req, res) => {
-  res.json(getSniperSignerStatus());
+app.get("/api/sniper/status", async (_req, res) => {
+  let storageMounted = false;
+  try { await fs.access(SNIPER_DATA_DIR); storageMounted = true; }
+  catch (error) { sniperRulesStorageError = error.message; }
+  res.json({
+    ...getSniperSignerStatus(),
+    rulesPersistence: {
+      storageMounted,
+      ready: storageMounted && sniperRulesLoaded && !sniperRulesStorageError,
+      savedRuleCount: sniperRulesLoaded ? persistedSniperRules.length : null,
+      error: sniperRulesStorageError
+    }
+  });
+});
+app.get("/api/sniper/rules/auth/challenge", (req, res) => {
+  const wallet = String(req.query.wallet || "");
+  if (wallet !== EXPECTED_SNIPER_WALLET) {
+    return res.status(403).json({ error: "Connect the dedicated sniper wallet to authorize cloud rules." });
+  }
+  const nonce = crypto.randomBytes(24).toString("hex");
+  const message = "SOL SCANNER sniper rules authorization\nWallet: " + wallet + "\nNonce: " + nonce;
+  sniperChallenges.set(wallet, { nonce, message, expiresAt: Date.now() + 5 * 60 * 1000 });
+  res.json({ message, expiresAt: Date.now() + 5 * 60 * 1000 });
+});
+app.post("/api/sniper/rules/auth/verify", (req, res) => {
+  try {
+    const wallet = String(req.body?.wallet || "");
+    const signature = Buffer.from(String(req.body?.signature || ""), "base64");
+    const challenge = sniperChallenges.get(wallet);
+    if (wallet !== EXPECTED_SNIPER_WALLET || !challenge || challenge.expiresAt < Date.now() || signature.length !== 64) {
+      return res.status(401).json({ error: "Authorization challenge expired or invalid." });
+    }
+    const publicBytes = decodeBase58(wallet);
+    const publicDer = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), publicBytes]);
+    const publicKey = crypto.createPublicKey({ key: publicDer, format: "der", type: "spki" });
+    const valid = crypto.verify(null, Buffer.from(challenge.message, "utf8"), publicKey, signature);
+    sniperChallenges.delete(wallet);
+    if (!valid) return res.status(401).json({ error: "Wallet signature did not verify." });
+    const token = crypto.randomBytes(32).toString("hex");
+    sniperSessions.set(token, { wallet, expiresAt: Date.now() + 12 * 60 * 60 * 1000 });
+    res.json({ ok: true, token, expiresInSeconds: 43200 });
+  } catch {
+    res.status(400).json({ error: "Could not verify wallet signature." });
+  }
+});
+app.get("/api/sniper/rules", requireSniperRulesSession, async (_req, res) => {
+  try {
+    if (!sniperRulesLoaded) await loadPersistedSniperRules();
+    res.json({ rules: persistedSniperRules, storage: "Railway persistent volume", updated: true });
+  } catch (error) {
+    sniperRulesStorageError = error.message;
+    res.status(503).json({ error: "Persistent rules storage is unavailable.", detail: error.message });
+  }
+});
+app.put("/api/sniper/rules", requireSniperRulesSession, async (req, res) => {
+  try {
+    const rules = await savePersistedSniperRules(req.body?.rules);
+    res.json({ ok: true, rules, storage: "Railway persistent volume" });
+  } catch (error) {
+    sniperRulesStorageError = error.message;
+    res.status(400).json({ error: error.message || "Could not save sniper rules." });
+  }
 });
 
 app.get("/api/health", async (_req, res) => {
@@ -598,6 +737,7 @@ app.get("*", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.h
 
 app.listen(PORT, () => {
   console.log(`SOL SCANNER running on port ${PORT}`);
+  loadPersistedSniperRules().then(rules => console.log(`Loaded ${rules.length} sniper rules from persistent volume`)).catch(error => { sniperRulesStorageError = error.message; console.error("Sniper rules volume unavailable:", error.message); });
   pollSales();
   pollNewMints();
   pollTensorSales();
