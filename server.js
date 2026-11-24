@@ -61,6 +61,7 @@ const TENSOR_PROGRAMS = [
 let tensorLastPollAt = null;
 let tensorPollError = null;
 const tracked = new Set();
+let collectionPollCursor = 0;
 
 async function pollTensorSales() {
   if (!HELIUS_API_KEY) {
@@ -130,29 +131,37 @@ function activityTime(a) {
 }
 function isSale(a) {
   const t = String(a.type ?? a.txType ?? a.activityType ?? "").toLowerCase();
-  return ["buy", "sale"].some(k => t.includes(k));
+  return ["buynow", "sale", "buy"].some(k => t.includes(k));
 }
 function recordActivity(symbol, a) {
   if (!isSale(a)) return;
   const time = activityTime(a);
-  const price = sol(a.price ?? a.salePrice ?? a.amount);
+  const price = sol(a.price ?? a.price_sol ?? a.salePrice ?? a.sale_price ?? a.amount);
   if (!time || price == null || price <= 0) return;
-  const id = a.signature ?? a.txSignature ?? a.txid ?? a.tokenMint ?? `${symbol}:${time}:${price}`;
+  const id = a.signature ?? a.transaction_id ?? a.txSignature ?? a.txid ??
+    `${symbol}:${a.tokenMint ?? a.token_mint ?? "sale"}:${time}:${price}`;
   if (sales.has(id)) return;
   sales.set(id, { id, symbol, time, price });
 }
 async function pollSales() {
   try {
     const raw = await meGet("/collections?offset=0&limit=100");
-    const collections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 12);
-    const jobs = collections.map(async c => {
+    const collections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 100);
+    if (!collections.length) throw new Error("Magic Eden returned no collections to scan");
+    const start = collectionPollCursor % collections.length;
+    const batch = Array.from({ length: Math.min(12, collections.length) }, (_, i) =>
+      collections[(start + i) % collections.length]
+    );
+    collectionPollCursor = (start + batch.length) % collections.length;
+    const jobs = batch.map(async c => {
       tracked.add(c.symbol);
       const data = await meGet(`/collections/${encodeURIComponent(c.symbol)}/activities?offset=0&limit=50`);
-      (Array.isArray(data) ? data : []).forEach(a => recordActivity(c.symbol, a));
+      const activities = Array.isArray(data) ? data : (data?.activities ?? data?.results ?? []);
+      activities.forEach(a => recordActivity(c.symbol, a));
     });
     const results = await Promise.allSettled(jobs);
     const failed = results.filter(x => x.status === "rejected").length;
-    pollError = failed ? `${failed} collection activity feeds unavailable` : null;
+    pollError = failed ? `${failed} collection activity feeds unavailable in latest batch` : null;
     lastPollAt = new Date().toISOString();
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
     for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
@@ -386,7 +395,7 @@ app.listen(PORT, () => {
   pollSales();
   pollNewMints();
   pollTensorSales();
-  setInterval(pollSales, 60000);
+  setInterval(pollSales, 15000);
   setInterval(pollNewMints, 30000);
   setInterval(pollTensorSales, 60000);
 });
