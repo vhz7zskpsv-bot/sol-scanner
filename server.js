@@ -1533,6 +1533,8 @@ function normalizeBidRules(input) {
     const traitName = String(rule.traitName || "").trim().slice(0, 120);
     const traitValue = String(rule.traitValue || "").trim().slice(0, 160);
     if (bidType === "trait" && (!traitName || !traitValue)) throw new Error("Trait bids require both a trait name and value.");
+    const whitelistAddress = String(rule.whitelistAddress || "").trim();
+    if (whitelistAddress && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(whitelistAddress)) throw new Error("Tensor whitelist address must be a valid Solana public key.");
     return {
       id: String(rule.id || crypto.randomUUID()).slice(0, 80),
       marketplace: "Tensor",
@@ -1541,6 +1543,7 @@ function normalizeBidRules(input) {
       bidType,
       traitName: bidType === "trait" ? traitName : "",
       traitValue: bidType === "trait" ? traitValue : "",
+      whitelistAddress: String(rule.whitelistAddress || "").trim(),
       startBidSol,
       maxBidSol,
       incrementSol,
@@ -1587,8 +1590,9 @@ app.get("/api/bids/status", async (_req, res) => {
     executionEnabled: false,
     autoOutbidEnabled: false,
     transactionSigningEnabled: false,
+    keylessSdkPath: true,
     warning: !process.env.TENSOR_API_KEY
-      ? "Tensor API key is not configured. Live bid lookup and transaction construction are unavailable."
+      ? "Tensor REST order-book monitoring needs an API key. The official SDK simulation path does not, but it needs a Tensor whitelist address and Helius RPC."
       : "Live execution remains locked until bid creation, escrow funding, cancellation, and transaction simulation are verified.",
     storageError: bidRulesStorageError
   });
@@ -1690,6 +1694,59 @@ app.get("/api/bids/monitor", requireSniperRulesSession, async (_req, res) => {
   } catch (error) {
     bidMonitorLastError = error.message;
     res.status(502).json({ error: error.message, snapshots: [], executionEnabled: false });
+  }
+});
+
+app.post("/api/bids/simulate", requireSniperRulesSession, async (req, res) => {
+  try {
+    if (!bidRulesLoaded) await loadPersistedBidRules();
+    const ruleId = String(req.body?.ruleId || "");
+    const rule = persistedBidRules.find(item => item.id === ruleId);
+    if (!rule) return res.status(404).json({ error: "Saved bid rule was not found." });
+    if (!rule.enabled) return res.status(400).json({ error: "Turn this bid rule on before simulation." });
+    if (!rule.whitelistAddress) return res.status(400).json({ error: "Add the Tensor whitelist address for this collection or trait target first." });
+    const amountSol = Number(req.body?.amountSol ?? rule.startBidSol);
+    if (!Number.isFinite(amountSol) || amountSol < rule.startBidSol || amountSol > rule.maxBidSol) {
+      return res.status(400).json({ error: "Simulation amount must be between the rule starting bid and maximum bid." });
+    }
+    if (!HELIUS_RPC) return res.status(503).json({ error: "HELIUS_API_KEY is required for mainnet transaction simulation." });
+    const signerStatus = getSniperSignerStatus();
+    if (!signerStatus.signerConfigured || signerStatus.walletAddress !== req.sniperWallet) {
+      return res.status(503).json({ error: "Dedicated bid signer is not verified for the authorized wallet." });
+    }
+    const secret = signerKeyBytes(process.env.SNIPER_WALLET_PRIVATE_KEY);
+    if (secret.length !== 64) return res.status(400).json({ error: "The Tensor SDK requires the verified 64-byte Solana keypair format for this simulation." });
+    const web3 = await import("@solana/web3.js");
+    const marketplace = await import("@tensor-foundation/marketplace");
+    const helpers = await import("@tensor-foundation/common-helpers");
+    if (typeof helpers.simulateTxWithIxs !== "function") throw new Error("Installed Tensor common-helpers package does not expose simulateTxWithIxs.");
+    const signer = await web3.createKeyPairSignerFromBytes(new Uint8Array(secret), false);
+    if (signer.address !== EXPECTED_SNIPER_WALLET) throw new Error("SDK signer address does not match the configured dedicated wallet.");
+    const amountLamports = BigInt(Math.round(amountSol * 1e9));
+    const instruction = await marketplace.getBidInstructionAsync({
+      owner: signer,
+      target: marketplace.Target.Whitelist,
+      targetId: web3.address(rule.whitelistAddress),
+      amount: amountLamports,
+      quantity: 1,
+      makerBroker: signer.address
+    });
+    if (instruction.programAddress !== marketplace.TENSOR_MARKETPLACE_PROGRAM_ADDRESS) {
+      throw new Error("Unexpected Tensor marketplace program address; refusing simulation.");
+    }
+    const rpc = web3.createSolanaRpc(HELIUS_RPC);
+    const simulation = await helpers.simulateTxWithIxs(rpc, [instruction], signer);
+    const simulationError = simulation?.value?.err ?? simulation?.err ?? null;
+    if (simulationError) throw new Error("Tensor bid simulation failed: " + JSON.stringify(simulationError));
+    res.json({
+      ok: true, simulated: true, submitted: false, signedForSubmission: false,
+      ruleId: rule.id, bidType: rule.bidType, targetAddress: rule.whitelistAddress,
+      amountSol, amountLamports: amountLamports.toString(), quantity: 1,
+      signer: signer.address, programAddress: instruction.programAddress, instructionCount: 1,
+      note: "Simulation only. No transaction was submitted and no SOL was spent. This SDK route targets a Tensor whitelist; trait-specific behavior depends on the supplied whitelist actually representing that trait."
+    });
+  } catch (error) {
+    res.status(502).json({ error: error.message || "Tensor bid simulation failed.", simulated: false, submitted: false });
   }
 });
 
