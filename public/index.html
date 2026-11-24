@@ -299,7 +299,7 @@ async function loadSniperTraits(symbol){
       data=await get("/api/core/collection/"+encodeURIComponent(coreAddress)+"/attributes");
       hint.textContent="Source: Helius DAS · "+Number(data.assetCount||0)+" indexed Core NFTs"+(data.complete===false?" · partial index":"");
     }else if(collection?.source==="Tensor"){
-      data=await get("/api/marketplace/collection/"+encodeURIComponent(symbol)+"/attributes");
+      data=await get("/api/marketplace/collection/"+encodeURIComponent(collection?.collId||symbol)+"/attributes");
     }else{
       data=await get("/api/collection/"+encodeURIComponent(symbol)+"/attributes");
     }
@@ -448,7 +448,7 @@ async function persistSniperRules(rules){
 function renderSniperRules(){
   const rules=readSniperRules(),box=$("sniperRuleList");
   if(!rules.length){box.innerHTML='<div class="empty">No collection rules saved yet.</div>';return}
-  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+(r.collectionAddress?' · Core '+esc(r.collectionAddress.slice(0,6)+'…'+r.collectionAddress.slice(-4)):'')+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
+  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.name||r.symbol)+'</b><small>'+esc(r.symbol)+(r.marketplace?' · '+esc(r.marketplace):'')+' · '+esc(r.trait||"Any trait")+' · '+(r.traitValues?.length?esc(r.traitValues.join(", ")):"Any value")+'<br>Price '+fmt(r.minPrice)+'–'+fmt(r.maxPrice)+' SOL · Budget '+fmt(r.maxSpend)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · BUY LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-rule-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-rule-remove="'+i+'">Remove</button></div></div>').join("");
 }
 $("sniperRuleList").addEventListener("click",async e=>{
   const toggle=e.target.closest("[data-rule-toggle]"),remove=e.target.closest("[data-rule-remove]");
@@ -466,7 +466,7 @@ $("saveSniperRules").addEventListener("click",async()=>{
   if(max<=0||budget<=0){$("sniperSaveStatus").textContent="Maximum price aur max total spend set karo.";return}
   const tip=$("jitoTip").value==="custom"?Number($("customJitoTip").value||0):Number($("jitoTip").value);
   const collection=collectionSearchMap.get(symbol)||rows.find(c=>c.symbol===symbol);
-  const rule={symbol,collectionAddress:$("sniperCoreCollectionAddress").value.trim(),name:collection?.name||symbol,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,enabled:true,mode:"configuration-only",updatedAt:Date.now()};
+  const rule={symbol,collectionAddress:collection?.coreCollectionAddress||"",marketplace:collection?.source||"Magic Eden",name:collection?.name||symbol,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,enabled:true,mode:"configuration-only",updatedAt:Date.now()};
   try{
     const rules=readSniperRules(),index=rules.findIndex(r=>r.symbol===symbol);
     if(index>=0)rules[index]=rule;else rules.push(rule);
