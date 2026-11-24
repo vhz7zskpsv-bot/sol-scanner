@@ -13,7 +13,7 @@
 @media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}.section-grid{grid-template-columns:1fr}.hero{align-items:start;flex-direction:column}.wrap{padding:16px}}
 @media(max-width:430px){.grid{gap:8px}.card{padding:13px}.metric{font-size:20px}.wrap{padding:12px;max-width:100%;overflow:hidden}.top{margin-bottom:22px;align-items:flex-start}.brand{min-width:0}.brand h1{font-size:18px}.brand p{font-size:12px}.status{font-size:10px;max-width:46%;line-height:1.4}.hero h2{font-size:27px}.hero .sub{font-size:13px}.section-grid,.section-grid>*,.panel{min-width:0;max-width:100%}.table-wrap{margin:0 -4px;padding:0 4px}table{min-width:600px}.panel{padding:14px}.panel-head{gap:8px}.panel h3{font-size:15px}}
 
-.sniper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}.search-input,.sniper-input,.sniper-select{width:100%;background:#0d0a16;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:inherit;outline:none}.search-input:focus,.sniper-input:focus,.sniper-select:focus{border-color:var(--purple)}.search-results{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.search-result{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:20px;padding:7px 11px;cursor:pointer}.sniper-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sniper-fields label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.sniper-action{background:linear-gradient(135deg,#8f5bdf,#6543a8);color:white;border:0;border-radius:10px;padding:11px 15px;font-weight:700}.sniper-note{font-size:12px;color:var(--muted);line-height:1.5}.wallet-status{background:#19142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.sale-item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.sale-item:last-child{border:0}@media(max-width:650px){.sniper-grid{grid-template-columns:1fr}.sniper-fields{grid-template-columns:1fr 1fr}}
+.sniper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:18px 0}.search-input,.sniper-input,.sniper-select{width:100%;background:#0d0a16;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:inherit;outline:none}.search-input:focus,.sniper-input:focus,.sniper-select:focus{border-color:var(--purple)}.search-results{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.search-result{background:#211936;border:1px solid var(--line);color:var(--text);border-radius:20px;padding:7px 11px;cursor:pointer}.sniper-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.sniper-fields label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.trait-value-list{max-height:190px;overflow:auto;background:#0d0a16;border:1px solid var(--line);border-radius:10px;padding:8px}.trait-value-option{display:flex;align-items:center;gap:9px;padding:7px 4px;color:var(--text);font-size:13px}.trait-value-option input{accent-color:#8f5bdf;width:16px;height:16px;flex:0 0 auto}.trait-selected-count{font-size:11px;color:var(--muted);margin-top:5px}.sniper-action{background:linear-gradient(135deg,#8f5bdf,#6543a8);color:white;border:0;border-radius:10px;padding:11px 15px;font-weight:700}.sniper-note{font-size:12px;color:var(--muted);line-height:1.5}.wallet-status{background:#19142a;border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;overflow-wrap:anywhere}.sale-item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}.sale-item:last-child{border:0}@media(max-width:650px){.sniper-grid{grid-template-columns:1fr}.sniper-fields{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body><main class="wrap">
@@ -38,7 +38,7 @@
     <select class="sniper-select" id="sniperCollection" hidden><option value="">Select collection…</option></select>
     <div class="sniper-fields">
       <div><label for="sniperTrait">Trait type</label><select class="sniper-select" id="sniperTrait" disabled><option value="">Select collection first…</option></select></div>
-      <div><label for="sniperTraitValue">Trait value</label><select class="sniper-select" id="sniperTraitValue" disabled><option value="">Select trait type first…</option></select></div>
+      <div><label>Trait values <span class="sniper-note">(select multiple)</span></label><div class="trait-value-list" id="sniperTraitValue"><div class="sniper-note">Select trait type first…</div></div><div class="trait-selected-count" id="sniperTraitValueCount">0 selected · any value</div></div>
       <div class="sniper-note" id="sniperTraitHint" style="grid-column:1/-1">Choose a collection to load its available traits and values automatically.</div>
       <div><label for="sniperMin">Minimum price (SOL)</label><input class="sniper-input" id="sniperMin" type="number" min="0" step="0.01" placeholder="0.5"></div>
       <div><label for="sniperMax">Maximum price (SOL)</label><input class="sniper-input" id="sniperMax" type="number" min="0" step="0.01" placeholder="2"></div>
@@ -237,19 +237,26 @@ function traitRowsFromResponse(payload){
   walk(root);
   return map;
 }
+function selectedSniperTraitValues(){
+  return [...document.querySelectorAll("#sniperTraitValue input[type=checkbox]:checked")].map(input=>input.value);
+}
+function updateTraitValueCount(){
+  const count=selectedSniperTraitValues().length;
+  $("sniperTraitValueCount").textContent=count+" selected · "+(count?"match ANY selected value":"any value");
+}
 function renderTraitValues(){
   const type=$("sniperTrait").value;
-  const value=$("sniperTraitValue");
+  const box=$("sniperTraitValue");
   const options=sniperTraitMap.get(type)?[...sniperTraitMap.get(type)].sort((a,b)=>a.localeCompare(b)):[];
-  value.innerHTML='<option value="">Any value</option>'+options.map(v=>'<option value="'+esc(v)+'">'+esc(v)+'</option>').join("");
-  value.disabled=!type||!options.length;
+  box.innerHTML=options.length?options.map((v,i)=>'<label class="trait-value-option"><input type="checkbox" value="'+esc(v)+'"><span>'+esc(v)+'</span></label>').join(""):'<div class="sniper-note">'+(type?'No values available for this trait.':'Select trait type first…')+'</div>';
+  updateTraitValueCount();
 }
 async function loadSniperTraits(symbol){
   const type=$("sniperTrait"),value=$("sniperTraitValue"),hint=$("sniperTraitHint");
   sniperTraitMap=new Map();
-  type.disabled=true;value.disabled=true;
+  type.disabled=true;
   type.innerHTML='<option value="">Loading collection traits…</option>';
-  value.innerHTML='<option value="">Select trait type first…</option>';
+  value.innerHTML='<div class="sniper-note">Select trait type first…</div>';
   hint.textContent="Loading available traits from Magic Eden…";
   if(!symbol){type.innerHTML='<option value="">Select collection first…</option>';hint.textContent="Choose a collection to load its available traits and values automatically.";return}
   try{
@@ -258,15 +265,16 @@ async function loadSniperTraits(symbol){
     const names=[...sniperTraitMap.keys()].sort((a,b)=>a.localeCompare(b));
     type.innerHTML='<option value="">Any trait</option>'+names.map(n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>').join("");
     type.disabled=!names.length;
-    value.innerHTML='<option value="">Any value</option>';
-    value.disabled=true;
-    hint.textContent=names.length?names.length+" trait types loaded. Choose a trait to see its values.":"No trait metadata was returned for this collection.";
+    value.innerHTML='<div class="sniper-note">Select trait type first…</div>';
+    updateTraitValueCount();
+    hint.textContent=names.length?names.length+" trait types loaded. Choose a trait, then tick one or more values. Any selected value can match.":"No trait metadata was returned for this collection.";
   }catch(e){
     type.innerHTML='<option value="">Traits unavailable</option>';
     hint.textContent="Could not load traits: "+String(e.message||e);
   }
 }
 $("sniperTrait").addEventListener("change",renderTraitValues);
+$("sniperTraitValue").addEventListener("change",updateTraitValueCount);
 async function renderSniperCollectionMatches(){
   const q=$("sniperCollectionSearch").value.trim();
   if(!q){$("sniperCollectionMatches").innerHTML="";return;}
@@ -329,7 +337,7 @@ $("saveSniperRules").addEventListener("click",()=>{
   const min=Number($("sniperMin").value||0),max=Number($("sniperMax").value||0),budget=Number($("sniperBudget").value||0);
   if(max>0&&min>max){$("sniperSaveStatus").textContent="Minimum price cannot be higher than maximum price.";return}
   const tip=$("jitoTip").value==="custom"?Number($("customJitoTip").value||0):Number($("jitoTip").value);
-  const rules={symbol:$("sniperCollection").value,trait:$("sniperTrait").value.trim(),traitValue:$("sniperTraitValue").value.trim(),minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,mode:"configuration-only"};
+  const rules={symbol:$("sniperCollection").value,trait:$("sniperTrait").value.trim(),traitValues:selectedSniperTraitValues(),traitMatch:"ANY",minPrice:min,maxPrice:max,maxSpend:budget,jitoTipSol:tip,mode:"configuration-only"};
   try{localStorage.setItem("solScannerSniperRules",JSON.stringify(rules));$("sniperSaveStatus").textContent="Settings saved in this browser. Auto-buy remains locked until secure delegated signing is configured."}
   catch{$("sniperSaveStatus").textContent="Could not save settings in this browser."}
 });
