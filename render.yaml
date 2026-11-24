@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sol-scanner
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HELIUS_API_KEY
+        sync: false
+      - key: MAGIC_EDEN_API_KEY
+        sync: false
