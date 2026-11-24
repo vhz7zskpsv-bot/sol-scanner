@@ -215,6 +215,7 @@ const MAGIC_EDEN_PROGRAMS = [
 let magicEdenLastPollAt = null;
 let magicEdenPollError = null;
 let magicEdenPollBusy = false;
+let magicEdenBaselineReady = false;
 const tensorSales = new Map();
 const tensorSeenSignatures = new Set();
 const TENSOR_PROGRAMS = [
@@ -323,8 +324,18 @@ async function pollMagicEdenSales() {
     const groups = await Promise.all(MAGIC_EDEN_PROGRAMS.map(address =>
       heliusRpc("getSignaturesForAddress", [address, { limit: 50, commitment: "confirmed" }])
     ));
-    const fresh = groups.flat()
-      .filter(item => item?.signature && !magicEdenSeenSignatures.has(item.signature))
+    const signatures = groups.flat().filter(item => item?.signature);
+    // On process startup, establish a clean live-feed boundary: do not replay
+    // transactions that were already present before this scanner started.
+    if (!magicEdenBaselineReady) {
+      for (const item of signatures) magicEdenSeenSignatures.add(item.signature);
+      magicEdenBaselineReady = true;
+      magicEdenLastPollAt = new Date().toISOString();
+      magicEdenPollError = null;
+      return;
+    }
+    const fresh = signatures
+      .filter(item => !magicEdenSeenSignatures.has(item.signature))
       .slice(0, 100);
     if (fresh.length) {
       const response = await fetch(
@@ -1220,6 +1231,9 @@ app.get("/api/volume", (_req, res) => {
 });
 
 app.get("/api/live-sales", (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   res.json({
     sales: [...globalMagicEdenSales.values()].sort((a, b) => b.time - a.time).slice(0, 100),
     source: "Magic Eden on-chain program monitoring via Helius",
