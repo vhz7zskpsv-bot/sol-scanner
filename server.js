@@ -9,7 +9,7 @@ const ME_BASE = "https://api-mainnet.magiceden.dev/v2";
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY || "";
 const HELIUS_RPC = HELIUS_API_KEY ? "https://mainnet.helius-rpc.com/?api-key=" + encodeURIComponent(HELIUS_API_KEY) : "";
 const TOKEN_METADATA_PROGRAM = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
-const MAGIC_EDEN_PROGRAMS = ["M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K", "mmm3XBJg5k8XJxEKBvdgptZz6SgK4tXvn36sodowMc"];
+const MAGIC_EDEN_PROGRAMS = ["M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K", "mmm3XBJg5gk8XJxEKBvdgptZz6SgK4tXvn36sodowMc"];
 const TENSOR_PROGRAMS = ["TCMPhJdwDryooaGtiocG1u3xcYbRpiJzb283XfCZsDp", "TAMM6ub33ij1mbetoMyVBLeKY5iP41i4UPUJQGkhfsg"];
 const globalSales = new Map(), tensorSales = new Map(), recentMints = new Map();
 const seenMagic = new Set(), seenTensor = new Set(), seenMints = new Set();
