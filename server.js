@@ -293,6 +293,49 @@ app.get("/api/health", async (_req, res) => {
 let collectionsCache = null;
 let collectionsCacheAt = 0;
 
+let collectionDirectoryCache = null;
+let collectionDirectoryCacheAt = 0;
+let collectionDirectoryBusy = null;
+app.get("/api/collections/search", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    if (q.length < 1) return res.json({ collections: [], source: "Magic Eden collection directory" });
+    if (!collectionDirectoryCache || Date.now() - collectionDirectoryCacheAt > 10 * 60 * 1000) {
+      if (!collectionDirectoryBusy) {
+        collectionDirectoryBusy = (async () => {
+          const all = [];
+          // Walk Magic Eden's offset-based collection directory, not just the recent-sale set.
+          for (let offset = 0; offset < 5000; offset += 100) {
+            const page = await meGet(`/collections?offset=${offset}&limit=100`);
+            const items = Array.isArray(page) ? page : [];
+            all.push(...items.filter(c => c && c.symbol));
+            if (items.length < 100) break;
+          }
+          collectionDirectoryCache = all.map(c => ({
+            symbol: c.symbol,
+            name: c.name || c.symbol || "Unnamed collection",
+            image: c.image || c.imageURI || "",
+            floorPrice: sol(c.floorPrice),
+            listedCount: c.listedCount ?? null,
+            volume24h: sol(c.volume24hr ?? c.volume24h),
+            highestBid: null,
+            volumeAll: sol(c.volumeAll),
+            source: "Magic Eden"
+          }));
+          collectionDirectoryCacheAt = Date.now();
+        })().finally(() => { collectionDirectoryBusy = null; });
+      }
+      await collectionDirectoryBusy;
+    }
+    const matches = (collectionDirectoryCache || []).filter(c =>
+      (String(c.name) + " " + String(c.symbol)).toLowerCase().includes(q)
+    ).slice(0, 30);
+    res.json({ collections: matches, source: "Magic Eden collection directory", indexed: collectionDirectoryCache?.length || 0 });
+  } catch (error) {
+    res.status(502).json({ collections: [], error: error.message, hint: "Magic Eden collection directory search failed." });
+  }
+});
+
 app.get("/api/collections", async (_req, res) => {
   try {
     if (collectionsCache && Date.now() - collectionsCacheAt < 60000) {
