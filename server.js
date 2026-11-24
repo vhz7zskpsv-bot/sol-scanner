@@ -180,8 +180,14 @@ app.get("/api/health", async (_req, res) => {
   res.json({ ok: true, helius, marketplace: "Magic Eden", timestamp: new Date().toISOString(), lastPollAt, pollError });
 });
 
+let collectionsCache = null;
+let collectionsCacheAt = 0;
+
 app.get("/api/collections", async (_req, res) => {
   try {
+    if (collectionsCache && Date.now() - collectionsCacheAt < 60000) {
+      return res.json(collectionsCache);
+    }
     const raw = await meGet("/collections?offset=0&limit=100");
     const collections = (Array.isArray(raw) ? raw : []).map((c) => ({
       symbol: c.symbol,
@@ -193,7 +199,28 @@ app.get("/api/collections", async (_req, res) => {
       volumeAll: sol(c.volumeAll),
       source: "Magic Eden"
     }));
-    res.json({ collections, source: "Magic Eden" });
+
+    // The collection-list endpoint may omit market stats. Enrich the first
+    // 30 dashboard rows with the individual stats endpoint, in small batches.
+    for (let i = 0; i < Math.min(collections.length, 30); i += 6) {
+      const batch = collections.slice(i, i + 6);
+      await Promise.all(batch.map(async (c) => {
+        if (!c.symbol) return;
+        try {
+          const stats = await meGet(`/collections/${encodeURIComponent(c.symbol)}/stats`);
+          c.floorPrice = sol(stats.floorPrice) ?? c.floorPrice;
+          c.listedCount = stats.listedCount ?? c.listedCount;
+          c.volume24h = sol(stats.volume24hr ?? stats.volume24h) ?? c.volume24h;
+          c.volumeAll = sol(stats.volumeAll) ?? c.volumeAll;
+          c.volume7d = sol(stats.volume7d);
+        } catch {
+          // Keep list values if an individual stats request is unavailable.
+        }
+      }));
+    }
+    collectionsCache = { collections, source: "Magic Eden" };
+    collectionsCacheAt = Date.now();
+    res.json(collectionsCache);
   } catch (error) {
     res.status(502).json({ collections: [], error: error.message, hint: "Check marketplace API access and try again." });
   }
