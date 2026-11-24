@@ -62,6 +62,9 @@ let tensorLastPollAt = null;
 let tensorPollError = null;
 const tracked = new Set();
 let collectionPollCursor = 0;
+let marketplaceCollections = [];
+let collectionListFetchedAt = 0;
+let salesPollBusy = false;
 
 async function pollTensorSales() {
   if (!HELIUS_API_KEY) {
@@ -144,34 +147,47 @@ function recordActivity(symbol, a) {
   sales.set(id, { id, symbol, time, price });
 }
 async function pollSales() {
+  if (salesPollBusy) return;
+  salesPollBusy = true;
   try {
-    const raw = await meGet("/collections?offset=0&limit=100");
-    const collections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 100);
-    if (!collections.length) throw new Error("Magic Eden returned no collections to scan");
-    const start = collectionPollCursor % collections.length;
-    const batch = Array.from({ length: Math.min(6, collections.length) }, (_, i) =>
-      collections[(start + i) % collections.length]
+    // Refresh the collection universe infrequently; rotate through it continuously.
+    if (!marketplaceCollections.length || Date.now() - collectionListFetchedAt > 5 * 60 * 1000) {
+      const raw = await meGet("/collections?offset=0&limit=100");
+      marketplaceCollections = (Array.isArray(raw) ? raw : []).filter(c => c.symbol).slice(0, 100);
+      collectionListFetchedAt = Date.now();
+    }
+    if (!marketplaceCollections.length) throw new Error("Magic Eden returned no collections to scan");
+
+    const batchSize = Math.min(8, marketplaceCollections.length);
+    const batch = Array.from({ length: batchSize }, (_, i) =>
+      marketplaceCollections[(collectionPollCursor + i) % marketplaceCollections.length]
     );
-    collectionPollCursor = (start + batch.length) % collections.length;
+    collectionPollCursor = (collectionPollCursor + batch.length) % marketplaceCollections.length;
     let failed = 0;
+
     for (const c of batch) {
       try {
         tracked.add(c.symbol);
         const data = await meGet(`/collections/${encodeURIComponent(c.symbol)}/activities?offset=0&limit=50`);
         const activities = Array.isArray(data) ? data : (data?.activities ?? data?.results ?? []);
         activities.forEach(a => recordActivity(c.symbol, a));
-      } catch {
+      } catch (error) {
         failed++;
+        pollError = error.message;
       }
-      // Stay comfortably below Magic Eden's public API burst limit.
-      await new Promise(resolve => setTimeout(resolve, 600));
+      // 8 sequential requests with a 650ms gap stay below the public API burst limit.
+      await new Promise(resolve => setTimeout(resolve, 650));
     }
-    pollError = failed ? `${failed} collection activity feeds unavailable in latest batch` : null;
+
+    if (failed) pollError = `${failed} collection activity feeds unavailable in latest batch`;
+    else pollError = null;
     lastPollAt = new Date().toISOString();
     const cutoff = Date.now() - 2 * 60 * 60 * 1000;
     for (const [id, sale] of sales) if (sale.time < cutoff) sales.delete(id);
-  } catch (e) {
-    pollError = e.message;
+  } catch (error) {
+    pollError = error.message;
+  } finally {
+    salesPollBusy = false;
   }
 }
 function volumeFor(minutes) {
@@ -280,25 +296,7 @@ app.get("/api/collections", async (_req, res) => {
       source: "Magic Eden"
     }));
 
-    // The collection-list endpoint may omit market stats. Enrich the first
-    // 30 dashboard rows with the individual stats endpoint, in small batches.
-    for (let i = 0; i < Math.min(collections.length, 30); i += 6) {
-      const batch = collections.slice(i, i + 6);
-      await Promise.all(batch.map(async (c) => {
-        if (!c.symbol) return;
-        try {
-          const stats = await meGet(`/collections/${encodeURIComponent(c.symbol)}/stats?timeWindow=24h&listingAggMode=true`);
-          c.floorPrice = sol(stats.floorPrice) ?? c.floorPrice;
-          c.listedCount = stats.listedCount ?? c.listedCount;
-          c.volume24h = sol(stats.volume24hr ?? stats.volume24h) ?? c.volume24h;
-          c.volumeAll = sol(stats.volumeAll) ?? c.volumeAll;
-          c.volume7d = sol(stats.volume7d);
-          c.highestBid = sol(stats.highestBid ?? stats.highestOffer ?? stats.highestBidPrice);
-        } catch {
-          // Keep list values if an individual stats request is unavailable.
-        }
-      }));
-    }
+    // Keep this list endpoint light; collection-specific stats load on demand.
     collectionsCache = { collections, source: "Magic Eden" };
     collectionsCacheAt = Date.now();
     res.json(collectionsCache);
@@ -319,11 +317,22 @@ app.get("/api/new-mints", (_req, res) => {
 });
 
 app.get("/api/volume", (_req, res) => {
+  const windows = { "5m": volumeFor(5), "15m": volumeFor(15), "1h": volumeFor(60) };
+  const perCollection = {};
+  for (const symbol of tracked) {
+    const recent = [...sales.values()].filter(x => x.symbol === symbol);
+    const volume = (minutes) => {
+      const cutoff = Date.now() - minutes * 60 * 1000;
+      const items = recent.filter(x => x.time >= cutoff);
+      return { sol: items.reduce((sum, item) => sum + item.price, 0), sales: items.length };
+    };
+    perCollection[symbol] = { "5m": volume(5), "15m": volume(15), "1h": volume(60) };
+  }
   res.json({
-    windows: { "5m": volumeFor(5), "15m": volumeFor(15), "1h": volumeFor(60) },
+    windows, perCollection,
     trackedCollections: tracked.size,
     lastPollAt,
-    note: "Observed marketplace sale events since this service started polling; not historical backfill.",
+    note: "Observed Magic Eden sale activity from the rotating tracked collection set; not historical backfill.",
     warning: pollError
   });
 });
@@ -376,18 +385,25 @@ app.get("/api/collection/:symbol/activities", async (req, res) => {
 
 app.get("/api/new", async (_req, res) => {
   try {
-    const raw = await meGet("/collections?offset=0&limit=100");
+    // Only call a collection "recent" when the marketplace supplies a real creation timestamp.
+    const raw = await meGet("/collections?offset=0&limit=500");
     const collections = (Array.isArray(raw) ? raw : [])
-      .filter(c => c.symbol && (c.createdAt || c.updatedAt || c.name))
+      .filter(c => c.symbol && c.createdAt && Number.isFinite(new Date(c.createdAt).getTime()))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 20)
       .map(c => ({
         symbol: c.symbol,
         name: c.name || c.symbol,
         image: c.image || c.imageURI || "",
         floorPrice: sol(c.floorPrice),
-        createdAt: c.createdAt || null
+        createdAt: c.createdAt,
+        verified: null
       }));
-    res.json({ collections, note: "Marketplace collection discovery feed; not a complete on-chain mint index." });
+    res.json({
+      collections,
+      source: "Magic Eden",
+      note: "Sorted by marketplace creation timestamps when supplied; verification is not inferred."
+    });
   } catch (error) {
     res.status(502).json({ collections: [], error: error.message });
   }
@@ -400,7 +416,7 @@ app.listen(PORT, () => {
   pollSales();
   pollNewMints();
   pollTensorSales();
-  setInterval(pollSales, 30000);
+  setInterval(pollSales, 6000);
   setInterval(pollNewMints, 30000);
   setInterval(pollTensorSales, 60000);
 });
