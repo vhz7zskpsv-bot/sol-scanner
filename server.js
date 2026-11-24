@@ -80,7 +80,7 @@ async function pollTensorSales() {
       .slice(0, 50);
     if (fresh.length) {
       const response = await fetch(
-        `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
+        `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -215,7 +215,7 @@ async function pollNewMints() {
       return;
     }
     const response = await fetch(
-      `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
+      `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${encodeURIComponent(HELIUS_API_KEY)}`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
