@@ -27,6 +27,19 @@ let collectionsCache=null, collectionsCacheAt=0, directoryCache=null, directoryC
 app.use(express.static(path.join(__dirname,"public")));
 app.use(express.json());
 
+function trimMap(collection, maxEntries, olderThan) {
+  if (!(collection instanceof Map) && !(collection instanceof Set)) return;
+  if (olderThan !== undefined && collection instanceof Map) {
+    for (const [key, value] of collection) {
+      const timestamp = Number(value?.time);
+      if (Number.isFinite(timestamp) && timestamp < olderThan) collection.delete(key);
+    }
+  }
+  while (collection.size > maxEntries) {
+    const oldestKey = collection.keys().next().value;
+    collection.delete(oldestKey);
+  }
+}
 const sol = value => {
   if (value===null || value===undefined || value==="") return null;
   const n=Number(value); if(!Number.isFinite(n)) return null;
