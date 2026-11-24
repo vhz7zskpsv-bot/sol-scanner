@@ -17,6 +17,6 @@
     "@solana/web3.js": "^2.0.0",
     "@tensor-foundation/marketplace": "1.0.0",
     "@tensor-foundation/common-helpers": "1.0.0-beta.3",
-    "@tensor-foundation/whitelist": "0.2.1"
+    "@tensor-foundation/whitelist": "1.0.0"
   }
 }
