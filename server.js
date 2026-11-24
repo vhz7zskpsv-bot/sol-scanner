@@ -33,6 +33,76 @@ async function heliusRpc(method, params) {
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
+const EXPECTED_SNIPER_WALLET = process.env.SNIPER_WALLET_ADDRESS || "AU7azG5gd8LTbmTxv1ia5k8ShpeasW87A7X4D3J9MaQW";
+function decodeBase58(value) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let number = 0n;
+  for (const char of value) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) throw new Error("invalid_base58");
+    number = number * 58n + BigInt(digit);
+  }
+  const bytes = [];
+  while (number > 0n) {
+    bytes.unshift(Number(number & 255n));
+    number >>= 8n;
+  }
+  let zeroes = 0;
+  while (zeroes < value.length && value[zeroes] === "1") zeroes++;
+  return Buffer.concat([Buffer.alloc(zeroes), Buffer.from(bytes)]);
+}
+function signerKeyBytes(raw) {
+  const value = String(raw || "").trim();
+  if (!value) throw new Error("missing_key");
+  if (value.startsWith("[")) {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed) || !parsed.every(n => Number.isInteger(n) && n >= 0 && n <= 255)) {
+      throw new Error("invalid_key_format");
+    }
+    return Buffer.from(parsed);
+  }
+  return decodeBase58(value);
+}
+function deriveEd25519PublicKey(seed) {
+  const prefix = Buffer.from("302e020100300506032b657004220420", "hex");
+  const privateKey = require("crypto").createPrivateKey({
+    key: Buffer.concat([prefix, seed]), format: "der", type: "pkcs8"
+  });
+  const publicDer = require("crypto").createPublicKey(privateKey).export({
+    format: "der", type: "spki"
+  });
+  return Buffer.from(publicDer).subarray(-32);
+}
+function getSniperSignerStatus() {
+  const base = {
+    walletAddress: EXPECTED_SNIPER_WALLET,
+    signerConfigured: false,
+    liveBuyingEnabled: false,
+    autoBuyImplemented: false
+  };
+  const raw = process.env.SNIPER_WALLET_PRIVATE_KEY;
+  if (!raw) return { ...base, state: "awaiting_private_key", message: "Add the sniper wallet private key in Railway Variables to verify this signer." };
+  try {
+    const expected = decodeBase58(EXPECTED_SNIPER_WALLET);
+    if (expected.length !== 32) return { ...base, state: "invalid_expected_address", message: "Configured sniper wallet address is invalid." };
+    const secret = signerKeyBytes(raw);
+    if (secret.length !== 32 && secret.length !== 64) {
+      return { ...base, state: "invalid_key_length", message: "Private key format must decode to 32 or 64 bytes." };
+    }
+    const publicKey = deriveEd25519PublicKey(secret.subarray(0, 32));
+    if (secret.length === 64 && !require("crypto").timingSafeEqual(secret.subarray(32), publicKey)) {
+      return { ...base, state: "invalid_key_pair", message: "Private key bytes do not form a valid Solana keypair." };
+    }
+    if (!require("crypto").timingSafeEqual(expected, publicKey)) {
+      return { ...base, state: "address_mismatch", message: "The Railway private key does not match the selected sniper wallet address." };
+    }
+    return { ...base, signerConfigured: true, state: "signer_verified", message: "Signer matches the sniper wallet. Live purchases remain disabled until marketplace execution tests pass." };
+  } catch {
+    return { ...base, state: "invalid_private_key", message: "Private key could not be parsed or verified. Check its format in Railway Variables." };
+  }
+}
+
+
 const meHeaders = () => ({
   accept: "application/json",
   ...(process.env.MAGIC_EDEN_API_KEY ? { Authorization: `Bearer ${process.env.MAGIC_EDEN_API_KEY}` } : {})
@@ -273,7 +343,7 @@ async function pollNewMints() {
   }
 }
 
-app.get("/api/health", async (_req, res) => {
+app.get("/api/sniper/status", (_req, res) => {\n  res.json(getSniperSignerStatus());\n});\n\napp.get("/api/health", async (_req, res) => {
   let helius = "not_configured";
   if (HELIUS_RPC) {
     try {
