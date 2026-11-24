@@ -1593,6 +1593,106 @@ app.get("/api/bids/status", async (_req, res) => {
     storageError: bidRulesStorageError
   });
 });
+
+function unwrapTensorRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  for (const key of ["bids", "orders", "results", "data", "collectionBids", "traitBids"]) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  return [];
+}
+function bidAmountSol(row) {
+  for (const key of ["amount", "price", "bidPrice", "priceLamports", "amountLamports", "grossAmount"]) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value) && value > 0) return key.toLowerCase().includes("lamport") || value > 100000 ? value / 1e9 : value;
+  }
+  return null;
+}
+function bidOwner(row) {
+  return String(row?.owner || row?.bidder || row?.wallet || row?.maker || row?.ownerAddress || "");
+}
+const bidMarketCache = new Map();
+let bidMonitorLastAt = null;
+let bidMonitorLastError = null;
+async function resolveTensorCollectionForBid(slug) {
+  const cached = tensorCollectionCache.get("tensor:" + slug);
+  if (cached?.collection?.collId) return cached.collection;
+  const raw = await tensorApiGet("/collections/find?query=" + encodeURIComponent(slug));
+  const candidates = Array.isArray(raw) ? raw : (raw.collections || raw.results || (raw.collection ? [raw.collection] : []));
+  const match = candidates.find(c => c.slugDisplay === slug || c.slugMe === slug || c.symbol === slug) || candidates[0];
+  if (!match?.collId) throw new Error("Tensor collection ID could not be resolved for " + slug);
+  const collection = { collId: match.collId, symbol: match.slugDisplay || match.slugMe || match.symbol || slug, name: match.name || slug };
+  tensorCollectionCache.set("tensor:" + slug, { collection, at: Date.now() });
+  return collection;
+}
+async function fetchBidMarketSnapshot(rule) {
+  const collection = await resolveTensorCollectionForBid(rule.collectionSlug);
+  const route = rule.bidType === "trait" ? "/collections/trait_bids" : "/collections/coll_bids";
+  const query = new URLSearchParams({ collId: collection.collId, limit: rule.bidType === "trait" ? "100" : "50" });
+  const payload = await tensorApiGet(route + "?" + query.toString());
+  let rows = unwrapTensorRows(payload);
+  if (rule.bidType === "trait") {
+    rows = rows.filter(row => {
+      const traits = row?.traits || row?.attributes || row?.trait || row?.traitAttributes || [];
+      if (Array.isArray(traits)) return traits.some(t =>
+        String(t?.trait_type || t?.traitType || t?.name || t?.key || "").toLowerCase() === rule.traitName.toLowerCase() &&
+        String(t?.value ?? t?.traitValue ?? "").toLowerCase() === rule.traitValue.toLowerCase()
+      );
+      if (traits && typeof traits === "object") return String(traits[rule.traitName] ?? "").toLowerCase() === rule.traitValue.toLowerCase();
+      return false;
+    });
+  }
+  const ranked = rows.map(row => ({ row, amountSol: bidAmountSol(row), owner: bidOwner(row) }))
+    .filter(item => item.amountSol !== null)
+    .sort((a, b) => b.amountSol - a.amountSol);
+  const top = ranked[0] || null;
+  const own = ranked.find(item => item.owner === EXPECTED_SNIPER_WALLET) || null;
+  return {
+    ruleId: rule.id,
+    collection: collection.name,
+    bidType: rule.bidType,
+    trait: rule.bidType === "trait" ? { name: rule.traitName, value: rule.traitValue } : null,
+    marketBidCount: ranked.length,
+    highestBidSol: top?.amountSol ?? null,
+    highestBidOwner: top?.owner || null,
+    ownBidSol: own?.amountSol ?? null,
+    outbid: Boolean(top && top.owner !== EXPECTED_SNIPER_WALLET && top.amountSol >= rule.startBidSol),
+    nextSuggestedBidSol: top ? Math.min(rule.maxBidSol, Number((top.amountSol + rule.incrementSol).toFixed(9))) : rule.startBidSol,
+    maxReached: Boolean(top && top.amountSol + rule.incrementSol > rule.maxBidSol),
+    observedAt: Date.now(),
+    source: "Tensor REST order book",
+    executionEnabled: false
+  };
+}
+app.get("/api/bids/monitor", requireSniperRulesSession, async (_req, res) => {
+  try {
+    if (!bidRulesLoaded) await loadPersistedBidRules();
+    if (!process.env.TENSOR_API_KEY) return res.status(503).json({ error: "Tensor API key is not configured in Railway yet.", snapshots: [], executionEnabled: false });
+    const active = persistedBidRules.filter(rule => rule.enabled).slice(0, 10);
+    const snapshots = [];
+    for (const rule of active) {
+      try {
+        const cacheKey = rule.id;
+        const cached = bidMarketCache.get(cacheKey);
+        if (cached && Date.now() - cached.at < 10000) snapshots.push(cached.value);
+        else {
+          const value = await fetchBidMarketSnapshot(rule);
+          bidMarketCache.set(cacheKey, { value, at: Date.now() });
+          snapshots.push(value);
+        }
+      } catch (error) {
+        snapshots.push({ ruleId: rule.id, error: error.message, observedAt: Date.now(), executionEnabled: false });
+      }
+    }
+    bidMonitorLastAt = Date.now();
+    bidMonitorLastError = null;
+    res.json({ snapshots, checkedAt: bidMonitorLastAt, pollIntervalMs: 15000, executionEnabled: false, autoOutbidEnabled: false, note: "Read-only market monitoring only. No bid is signed, submitted, edited, or cancelled." });
+  } catch (error) {
+    bidMonitorLastError = error.message;
+    res.status(502).json({ error: error.message, snapshots: [], executionEnabled: false });
+  }
+});
+
 app.get("/api/bids/rules", requireSniperRulesSession, async (_req, res) => {
   try {
     if (!bidRulesLoaded) await loadPersistedBidRules();
