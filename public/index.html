@@ -96,6 +96,26 @@ tbody tr{background:#0f151d;transition:background .15s}tbody tr:nth-child(even){
     <div class="sniper-note" id="sniperSaveStatus">Cloud rules are stored on Railway persistent volume. Wallet message signatures authorize settings only; no transaction is signed. Jito tip is separate from the network priority fee.</div>
   </article>
 </section>
+
+<section class="panel" id="biddingPanel" style="margin:18px 0">
+  <div class="panel-head"><h3>⚡ Tensor Bid Bot</h3><span class="pill">SEPARATE MODULE</span></div>
+  <div class="sniper-note">Collection-wide aur trait bids ke rules yahan alag save honge. Start bid aur max bid tum set karoge; floor price sirf reference hai.</div>
+  <div class="sniper-fields">
+    <div><label for="bidCollection">Tensor collection slug</label><input class="sniper-input" id="bidCollection" placeholder="Collection slug (Tensor URL ka /trade/ ke baad wala hissa)"></div>
+    <div><label for="bidCollectionName">Collection name (optional)</label><input class="sniper-input" id="bidCollectionName" placeholder="Collection name"></div>
+    <div><label for="bidType">Bid type</label><select class="sniper-select" id="bidType"><option value="collection">Collection-wide bid</option><option value="trait">Trait bid</option></select></div>
+    <div id="bidTraitFields" hidden><label for="bidTraitName">Trait name</label><input class="sniper-input" id="bidTraitName" placeholder="e.g. Background"></div>
+    <div id="bidTraitValueField" hidden><label for="bidTraitValue">Trait value</label><input class="sniper-input" id="bidTraitValue" placeholder="e.g. Gold"></div>
+    <div><label for="bidStart">Starting bid (SOL)</label><input class="sniper-input" id="bidStart" type="number" min="0.000000001" step="0.000000001" placeholder="Your opening bid"></div>
+    <div><label for="bidMax">Maximum bid (SOL)</label><input class="sniper-input" id="bidMax" type="number" min="0.000000001" step="0.000000001" placeholder="Hard maximum"></div>
+    <div><label for="bidIncrement">Outbid increment (SOL)</label><input class="sniper-input" id="bidIncrement" type="number" min="0.000000001" step="0.000000001" placeholder="Minimum increase"></div>
+  </div>
+  <div class="wallet-status"><b id="bidBotStatus">Checking Tensor bid engine…</b><div class="sniper-note" id="bidBotHint">Connect your dedicated wallet in the NFT Sniper panel to authorize cloud rule storage. Saving a rule does not place a bid.</div></div>
+  <button class="sniper-action" id="saveBidRule" type="button">Save bidding rule</button>
+  <div class="sniper-note" id="bidSaveStatus" style="margin-top:10px">Live bids, automatic rebids and transaction signing are LOCKED until Tensor API/transaction flow, escrow and cancellation are verified.</div>
+  <div id="bidRuleList" class="sniper-rule-list"><div class="empty">No bid rules loaded.</div></div>
+</section>
+
 <section class="section-grid"><article class="panel"><div class="panel-head"><h3>🏆 Top Collections</h3><span class="muted" id="source">Magic Eden</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>COLLECTION</th><th>FLOOR</th><th>HIGHEST BID</th><th id="volumeHeading">VOLUME · 5M</th></tr></thead><tbody id="collections"><tr><td colspan="5" class="empty">Loading collections…</td></tr></tbody></table></div></article>
 <aside><article class="panel"><div class="panel-head"><h3>✨ Recently Created</h3><span class="pill">MAGIC EDEN</span></div><div id="new"><div class="empty">Loading marketplace feed…</div></div></article><article class="panel"><div class="panel-head"><h3>🪄 On-chain New Mints</h3><span class="pill">HELIUS</span></div><div id="mints"><div class="empty">Waiting for Helius mint events…</div></div></article><article class="panel alerts"><div class="panel-head"><h3>🔔 Website Alerts</h3><span class="muted">This session</span></div><div id="alerts"><div class="empty">Alerts will appear here when activity is available.</div></div></article></aside></section>
 <footer class="foot"><span>◎ SOL SCANNER · Solana Mainnet</span><span id="health">Waiting for data providers</span><span>Do your own research · Not financial advice</span></footer>
@@ -532,6 +552,71 @@ $("saveSniperRules").addEventListener("click",async()=>{
     $("sniperSaveStatus").textContent=rule.name+" rule saved to Railway persistent storage and switched ON. Auto-Buy remains locked.";
   }catch(error){$("sniperSaveStatus").textContent=error.message}
 });
+
+async function refreshBidEngineStatus(){
+  try{
+    const data=await get("/api/bids/status");
+    $("bidBotStatus").textContent="Tensor API key: "+(data.apiKeyConfigured?"configured":"not configured")+" · Saved rules: "+(data.savedRuleCount??"—");
+    $("bidBotHint").textContent=data.warning||"Bidding rules storage is available.";
+    $("bidSaveStatus").textContent=data.executionEnabled?"Execution enabled":"LIVE BID EXECUTION LOCKED · No transaction will be signed or submitted.";
+  }catch(e){$("bidBotStatus").textContent="Bid engine status unavailable";$("bidBotHint").textContent=String(e.message||e)}
+}
+function renderBidRules(rules){
+  const box=$("bidRuleList");
+  if(!Array.isArray(rules)||!rules.length){box.innerHTML='<div class="empty">No bid rules saved yet.</div>';return}
+  box.innerHTML=rules.map((r,i)=>'<div class="sniper-rule"><div><b>'+esc(r.collectionName||r.collectionSlug)+'</b><small>'+esc(r.collectionSlug)+' · '+(r.bidType==="trait"?"Trait: "+esc(r.traitName)+" = "+esc(r.traitValue):"Collection-wide")+'<br>Start '+fmt(r.startBidSol)+' SOL · Max '+fmt(r.maxBidSol)+' SOL · Step '+fmt(r.incrementSol)+' SOL</small><span class="sniper-rule-state">'+(r.enabled?"RULE ON":"RULE OFF")+' · LIVE BID LOCKED</span></div><div class="sniper-rule-actions"><button type="button" data-bid-toggle="'+i+'">'+(r.enabled?"Turn off":"Turn on")+'</button><button type="button" data-bid-remove="'+i+'">Remove</button></div></div>').join("");
+}
+async function loadBidRules(){
+  if(!sniperRulesSession)await syncSniperRulesFromCloud();
+  const response=await fetch("/api/bids/rules",{headers:{Authorization:"Bearer "+sniperRulesSession}});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Could not load bid rules.");
+  renderBidRules(data.rules);
+  refreshBidEngineStatus();
+}
+async function saveBidRules(rules){
+  if(!sniperRulesSession)await syncSniperRulesFromCloud();
+  const response=await fetch("/api/bids/rules",{method:"PUT",headers:{"content-type":"application/json",Authorization:"Bearer "+sniperRulesSession},body:JSON.stringify({rules})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Could not save bid rules.");
+  renderBidRules(data.rules);
+  refreshBidEngineStatus();
+}
+$("bidType").addEventListener("change",()=>{
+  const trait=$("bidType").value==="trait";
+  $("bidTraitFields").hidden=!trait;
+  $("bidTraitValueField").hidden=!trait;
+});
+$("saveBidRule").addEventListener("click",async()=>{
+  const slug=$("bidCollection").value.trim().replace(/^https?:\/\/(www\.)?tensor\.trade\/trade\//i,"").split(/[?#/]/)[0];
+  const bidType=$("bidType").value;
+  const rule={id:crypto.randomUUID(),collectionSlug:slug,collectionName:$("bidCollectionName").value.trim()||slug,bidType,traitName:$("bidTraitName").value.trim(),traitValue:$("bidTraitValue").value.trim(),startBidSol:Number($("bidStart").value),maxBidSol:Number($("bidMax").value),incrementSol:Number($("bidIncrement").value),autoOutbid:true,enabled:true};
+  try{
+    $("bidSaveStatus").textContent="Authorizing wallet and saving separate bid rule…";
+    let rules=[];
+    const response=await fetch("/api/bids/rules",{headers:{Authorization:"Bearer "+(sniperRulesSession||"")}});
+    if(response.ok){const data=await response.json();rules=data.rules||[]}
+    else if(response.status===401||response.status===403){await syncSniperRulesFromCloud();const retry=await fetch("/api/bids/rules",{headers:{Authorization:"Bearer "+sniperRulesSession}});const data=await retry.json();if(!retry.ok)throw new Error(data.error||"Wallet authorization failed.");rules=data.rules||[]}
+    rules=rules.filter(r=>!(r.collectionSlug===slug&&r.bidType===bidType&&r.traitName===rule.traitName&&r.traitValue===rule.traitValue));
+    rules.push(rule);
+    await saveBidRules(rules);
+    $("bidSaveStatus").textContent="Bid rule saved to Railway. Auto-outbid preference recorded; live execution remains locked.";
+  }catch(e){$("bidSaveStatus").textContent=String(e.message||e)}
+});
+$("bidRuleList").addEventListener("click",async e=>{
+  const toggle=e.target.closest("[data-bid-toggle]"),remove=e.target.closest("[data-bid-remove]");
+  try{
+    if(!sniperRulesSession)await syncSniperRulesFromCloud();
+    const response=await fetch("/api/bids/rules",{headers:{Authorization:"Bearer "+sniperRulesSession}});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||"Could not load rules.");
+    const rules=data.rules||[];
+    if(toggle){const i=Number(toggle.dataset.bidToggle);if(rules[i])rules[i].enabled=!rules[i].enabled}
+    if(remove){const i=Number(remove.dataset.bidRemove);if(rules[i])rules.splice(i,1)}
+    await saveBidRules(rules);
+    $("bidSaveStatus").textContent="Bid rules updated. No real bid was placed.";
+  }catch(e){$("bidSaveStatus").textContent=String(e.message||e)}
+});
+
 renderSniperRules();
 
 renderSniperCollectionOptions();
