@@ -17,7 +17,8 @@ app.get("/api/health", (_req, res) => res.json({
   ok: true,
   services: ["SOL signals", "SOL paper trading", "Solana meme scanner", "meme paper trading"],
   nftModules: false,
-  helius: process.env.HELIUS_API_KEY ? "configured" : "missing",
+  heliusRequired: false,
+  solanaRpc: process.env.SOLANA_RPC_URL ? "custom RPC configured" : "public RPC fallback",
   timestamp: new Date().toISOString()
 }));
 
