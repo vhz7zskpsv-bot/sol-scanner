@@ -46,7 +46,7 @@ const sol = value => {
   return n>100000 ? n/1e9 : n;
 };
 async function meGet(route) {
-  const response=await fetch(ME_BASE+route,{headers:{accept:"application/json",...(process.env.MAGIC_EDEN_API_KEY?{Authorization:"Bearer "+process.env.MAGIC_EDEN_API_KEY}:{})},signal:AbortSignal.timeout(12000)});
+  const response=await fetch(ME_BASE+route,{headers:{accept:"application/json",...(process.env.MAGIC_EDEN_API_KEY?{Authorization:"Bearer "+process.env.MAGIC_EDEN_API_KEY}:{})}});
   if(!response.ok) throw new Error("Magic Eden API returned "+response.status);
   return response.json();
 }
@@ -54,13 +54,15 @@ async function meGet(route) {
 // monitor loops cannot stampede the RPC endpoint at the same time.
 let heliusQueue=Promise.resolve(),heliusLastRequestAt=0;
 function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
-function heliusFetch(url,options){
+function heliusFetch(url,options,timeoutMs=30000){
   const task=heliusQueue.then(async()=>{
     for(let attempt=0;attempt<4;attempt++){
       const gap=Math.max(0,350-(Date.now()-heliusLastRequestAt));
       if(gap)await wait(gap);
       heliusLastRequestAt=Date.now();
-      const response=await fetch(url,options);
+      // Start the timeout only when this queued request actually begins.
+      const requestOptions={...options,signal:AbortSignal.timeout(timeoutMs)};
+      const response=await fetch(url,requestOptions);
       if(response.status!==429&&response.status<500)return response;
       if(attempt===3)return response;
       const retryAfter=Number(response.headers.get("retry-after"));
