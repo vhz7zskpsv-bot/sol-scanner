@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const FILE = process.env.MEME_PAPER_FILE || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, "meme-paper-trading.json") : "/data/meme-paper-trading.json");
-const START = 1000, NOTIONAL = 25, FEE = 0.001, SLIPPAGE = 0.01, STOP = 0.15, TARGET = 0.30, MAX_HOLD_MS = 4 * 60 * 60 * 1000;
+const START = 1000, NOTIONAL = 25, FEE = 0.001, SLIPPAGE = 0.01, STOP = 0.15, TARGET = 0.30, TRAIL_START = 0.10, TRAIL_GAP = 0.08, MAX_HOLD_MS = 4 * 60 * 60 * 1000;
 let state = { cash: START, realizedPnl: 0, open: {}, trades: [], confirmations: {}, events: [], autoBuys: 0 };
 let queue = Promise.resolve();
 function load() {
@@ -35,7 +35,14 @@ function observe(token) {
   if (!token || !token.mint || !Number.isFinite(Number(token.priceUsd)) || Number(token.priceUsd) <= 0) return;
   const mint = token.mint, price = Number(token.priceUsd), open = state.open[mint];
   if (open) {
-    if (price <= open.stop) close(mint, price, "STOP_LOSS");
+    open.lastPrice = price;
+    open.peakPrice = Math.max(Number(open.peakPrice || open.entry), price);
+    if (open.peakPrice >= open.entry * (1 + TRAIL_START)) {
+      open.trailingActive = true;
+      open.trailingStop = Math.max(Number(open.stop), open.peakPrice * (1 - TRAIL_GAP));
+    }
+    const activeStop = open.trailingActive ? Math.max(open.stop, open.trailingStop) : open.stop;
+    if (price <= activeStop) close(mint, price, open.trailingActive ? "TRAILING_STOP" : "STOP_LOSS");
     else if (price >= open.target) close(mint, price, "TAKE_PROFIT");
     else if (Date.now() - new Date(open.openedAt).getTime() >= MAX_HOLD_MS) close(mint, price, "MAX_HOLD");
   }
@@ -51,7 +58,8 @@ function observe(token) {
         mint, name: token.name || token.symbol || "Unknown", symbol: token.symbol || "",
         openedAt, entry, quantity: qty, cost: spend,
         stop: entry * (1 - STOP), target: entry * (1 + TARGET),
-        lastPrice: price, status: "OPEN", source: "GeckoTerminal + RugCheck + public Solana RPC",
+        lastPrice: price, peakPrice: entry, trailingActive: false, trailingStop: entry * (1 - STOP),
+        status: "OPEN", source: "GeckoTerminal + RugCheck + public Solana RPC",
         entryFee: fee, exit: null, pnl: null
       };
       state.autoBuys = (state.autoBuys || 0) + 1;
@@ -66,11 +74,16 @@ function snapshot() {
   const wins = state.trades.filter(t => t.pnl > 0).length, total = state.trades.length;
   return {
     startingBalance: START, cash: Number(state.cash.toFixed(2)), realizedPnl: Number(state.realizedPnl.toFixed(2)),
-    openTrades: Object.values(state.open), trades: state.trades.slice(0, 30),
+    openTrades: Object.values(state.open).map(t => {
+      const mark = Number(t.lastPrice || t.entry) * (1 - SLIPPAGE);
+      const proceeds = t.quantity * mark;
+      const unrealizedPnl = proceeds - proceeds * FEE - t.cost;
+      return { ...t, currentValue: Number(proceeds.toFixed(4)), unrealizedPnl: Number(unrealizedPnl.toFixed(4)), unrealizedPnlPct: Number((unrealizedPnl / t.cost * 100).toFixed(2)) };
+    }), trades: state.trades.slice(0, 30),
     events: state.events.slice(0, 20), autoBuys: state.autoBuys || 0,
     confirmationsPending: Object.values(state.confirmations).filter(n => n > 0).length,
     stats: { completedTrades: total, wins, losses: total - wins, winRate: total ? Number((wins / total * 100).toFixed(1)) : null, openPositions: Object.keys(state.open).length, autoBuys: state.autoBuys || 0 },
-    rules: { notionalUsd: NOTIONAL, stopLossPct: STOP * 100, takeProfitPct: TARGET * 100, maxOpenPositions: 3, confirmationScans: 2 },
+    rules: { notionalUsd: NOTIONAL, stopLossPct: STOP * 100, takeProfitPct: TARGET * 100, trailingActivationPct: TRAIL_START * 100, trailingGapPct: TRAIL_GAP * 100, maxOpenPositions: 3, confirmationScans: 2 },
     disclaimer: "Demo only. $25 fixed notional per trade; 1% estimated slippage each side and 0.1% fees. Price feed gaps and real execution can differ. No wallet or real orders."
   };
 }
