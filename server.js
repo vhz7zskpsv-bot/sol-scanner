@@ -8,6 +8,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 require("./sol-signals").attach(app);
+require("./manual-trades").attach(app);
 const meme = require("./meme-scanner");
 const memePaper = require("./meme-paper-trading");
 memePaper.attach(app);
