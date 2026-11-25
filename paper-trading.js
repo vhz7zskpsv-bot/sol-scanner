@@ -74,7 +74,7 @@ function tick(mode, data) {
     // Conservative assumption if both levels trade within the same candle: stop first.
     if (stopHit) closeTrade(mode, open.stopLoss, "STOP_LOSS", candleKey);
     else if (targetHit) closeTrade(mode, open.target, "TAKE_PROFIT", candleKey);
-    else if (!confirmed) closeTrade(mode, primary.price, "SIGNAL_INVALIDATED", candleKey);
+    // A weaker/new market signal does not close an existing position. Keep tracking until SL/TP.
   }
 
   if (!state.open[mode] && state.confirmations[mode] >= 2 && confirmed) {
