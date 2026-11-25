@@ -1,13 +1,18 @@
-const INTERVALS = { "4h": "4h", "1d": "1d" };
+const INTERVALS = { "4h": 240, "1d": 1440 };
 const cache = { data: null, at: 0, error: null };
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 async function candles(interval, limit = 220) {
-  const url = "https://api.binance.com/api/v3/klines?symbol=SOLUSDT&interval=" + interval + "&limit=" + limit;
-  const response = await fetch(url, { signal: AbortSignal.timeout(12000), headers: { accept: "application/json" } });
-  if (!response.ok) throw new Error("Market data provider returned HTTP " + response.status);
-  const rows = await response.json();
-  if (!Array.isArray(rows) || rows.length < 60) throw new Error("Not enough SOL candle history");
-  return rows.map(r => ({ time: Number(r[0]), open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[5] }));
+  const seconds = interval * 60;
+  const since = Math.floor(Date.now() / 1000) - seconds * (limit + 5);
+  const url = "https://api.kraken.com/0/public/OHLC?pair=SOLUSD&interval=" + interval + "&since=" + since;
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error("Kraken market data provider returned HTTP " + response.status);
+  const payload = await response.json();
+  if (payload.error && payload.error.length) throw new Error("Kraken market data error: " + payload.error.join(", "));
+  const rowsKey = Object.keys(payload.result || {}).find(k => k !== "last");
+  const rows = rowsKey ? payload.result[rowsKey] : null;
+  if (!Array.isArray(rows) || rows.length < 60) throw new Error("Kraken returned insufficient SOL/USD candle history");
+  return rows.map(r => ({ time: Number(r[0]) * 1000, open: +r[1], high: +r[2], low: +r[3], close: +r[4], volume: +r[6] }));
 }
 function ema(values, period) {
   const k = 2 / (period + 1); let out = values[0];
@@ -73,7 +78,7 @@ async function refresh() {
   try {
     const [h4Rows, dRows] = await Promise.all([candles(INTERVALS["4h"]), candles(INTERVALS["1d"])]);
     const h4 = analyze(h4Rows), daily = analyze(dRows);
-    cache.data = { symbol: "SOLUSDT", quote: "USDT", horizon: "2–3 weeks", updatedAt: new Date().toISOString(), source: "Binance public spot OHLCV candles", monitoring: "server cache refresh every 5 minutes", timeframes: { "4h": h4, "1d": daily }, signal: makeSignal(h4, daily), disclaimer: "Technical indicator signal only; not a prediction or guarantee. No wallet access or automatic trading. Whale accumulation is not measured in this version." };
+    cache.data = { symbol: "SOLUSDT", quote: "USDT", horizon: "2–3 weeks", updatedAt: new Date().toISOString(), source: "Kraken public SOL/USD OHLC candles", monitoring: "server cache refresh every 5 minutes", timeframes: { "4h": h4, "1d": daily }, signal: makeSignal(h4, daily), disclaimer: "Technical indicator signal only; not a prediction or guarantee. No wallet access or automatic trading. Whale accumulation is not measured in this version." };
     cache.error = null; cache.at = Date.now();
   } catch (e) { cache.error = e.message; }
 }
