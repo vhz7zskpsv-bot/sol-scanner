@@ -1,158 +1,41 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1020"><title>NFT Monitor</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SOL Trading Scanner</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2d;--panel2:#17223a;--line:#26334d;--muted:#91a0ba;--text:#eef3ff;--accent:#8b9cff;--green:#61d6a3;--red:#ff8c9a}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 10% -10%,#1a2850 0,transparent 60%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,sans-serif}button,input{font:inherit}header{max-width:1200px;margin:auto;padding:25px 20px 16px;display:flex;justify-content:space-between;align-items:center;gap:16px}.brand{display:flex;align-items:center;gap:12px}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#7388ff,#9a6cff);display:grid;place-items:center;font-size:21px;font-weight:900}.brand h1{font-size:21px;margin:0;letter-spacing:-.5px}.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}.status{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:8px}.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px #61d6a377}main{max-width:1200px;margin:auto;padding:0 20px 50px}.nav{display:flex;gap:7px;overflow:auto;padding:8px 0 18px}.nav button,.action{border:1px solid var(--line);background:var(--panel);color:var(--muted);padding:9px 14px;border-radius:10px;white-space:nowrap;cursor:pointer}.nav button.active,.action.primary{background:#27365d;color:#fff;border-color:#5067a8}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.panel,.metric{background:linear-gradient(180deg,#151f35,#11192b);border:1px solid var(--line);border-radius:15px}.metric{padding:17px}.metric small,.muted{color:var(--muted)}.metric strong{display:block;font-size:25px;margin:6px 0 1px;letter-spacing:-.5px}.section{margin-top:18px}.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:20px 0 12px}.section-head h2{font-size:16px;margin:0}.panel{padding:16px}.toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.search{flex:1;min-width:180px;background:#0c1425;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 13px;outline:none}.search:focus{border-color:#7286ed}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:650px}.table th{text-align:left;color:var(--muted);font-size:11px;font-weight:600;padding:11px;border-bottom:1px solid var(--line)}.table td{padding:12px 11px;border-bottom:1px solid #202c43}.table tr:last-child td{border:0}.collection{display:flex;align-items:center;gap:10px;min-width:180px}.avatar{width:34px;height:34px;border-radius:10px;background:#27365d;object-fit:cover}.name{font-weight:650}.sub{font-size:11px;color:var(--muted)}.price{font-variant-numeric:tabular-nums}.sale,.mint{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid #202c43}.sale:last-child,.mint:last-child{border:0}.sale b,.mint b{font-variant-numeric:tabular-nums}.tabs{display:flex;gap:6px;flex-wrap:wrap}.tabs button{background:#0c1425;border:1px solid var(--line);color:var(--muted);padding:6px 10px;border-radius:8px;font-size:12px}.tabs button.active{background:#29385e;color:white}.empty{padding:28px;text-align:center;color:var(--muted)}.warning{color:#ffca83;font-size:12px;margin-top:10px}.hidden{display:none!important}.link{color:#aab8ff;text-decoration:none}.link:hover{text-decoration:underline}.foot{color:var(--muted);font-size:11px;margin-top:18px;text-align:center}@media(max-width:760px){header{padding:18px 15px 12px}main{padding:0 15px 35px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{padding:14px}.metric strong{font-size:22px}.brand h1{font-size:19px}.status{font-size:10px}}@media(max-width:390px){.grid{gap:8px}.metric strong{font-size:20px}}
-</style></head><body>
-<header><div class="brand"><div class="logo">N</div><div><h1>NFT Monitor</h1><p>Solana marketplace activity · Bot by Imran Bugti</p></div></div><div class="status"><span class="dot"></span><span id="health">Connecting…</span></div></header>
-<main>
-<nav class="nav"><button class="active" data-view="overview">Overview</button><button data-view="collections">Collections</button><button data-view="sales">Live Sales</button><button data-view="mints">Collection Mints</button><button data-view="sol-signals">SOL Signals</button></nav>
-<section id="overview">
-<div class="grid">
-<div class="metric"><small>Collections indexed</small><strong id="count">—</strong><small>Magic Eden directory</small></div>
-<div class="metric"><small>Live sales observed</small><strong id="saleCount">—</strong><small>Since monitor started</small></div>
-<div class="metric"><small>New mints observed</small><strong id="mintCount">—</strong><small>Helius classified</small></div>
-<div class="metric"><small>Last feed update</small><strong id="lastUpdate" style="font-size:17px">—</strong><small>Automatic refresh</small></div>
-</div>
-<div class="section panel"><div class="section-head"><h2>Market volume</h2><div class="tabs" id="volumeTabs"><button data-window="5m">5M</button><button data-window="10m">10M</button><button data-window="15m">15M</button><button class="active" data-window="1h">1H</button><button data-window="4h">4H</button><button data-window="6h">6H</button><button data-window="12h">12H</button></div></div><div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><small class="muted">Observed volume</small><strong id="volumeSol" style="font-size:25px;display:block;margin-top:5px">— SOL</strong></div><div><small class="muted">Sales count</small><strong id="volumeSales" style="font-size:25px;display:block;margin-top:5px">—</strong></div></div><div id="volumeWarning" class="warning"></div></div>
-<div class="section"><div class="section-head"><h2>Top collections</h2><button class="action" onclick="showView('collections')">View all</button></div><div class="panel table-wrap"><table class="table"><thead><tr><th>Collection</th><th>Floor</th><th>Highest bid</th><th>24H volume</th></tr></thead><tbody id="topCollections"><tr><td colspan="4" class="empty">Loading collections…</td></tr></tbody></table></div></div>
-<div class="section"><div class="section-head"><h2>Latest sales</h2><button class="action" onclick="showView('sales')">View feed</button></div><div class="panel" id="latestSales"><div class="empty">Loading sales…</div></div></div>
+:root{color-scheme:dark;--bg:#070914;--panel:#101426;--line:#242b46;--muted:#8d96b6;--text:#edf0ff;--green:#3df2b2;--red:#ff647f;--purple:#a78bfa;--cyan:#5ce1ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 20% 0%,#1b1740 0,transparent 38%),var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,sans-serif}
+main{max-width:1100px;margin:auto;padding:22px 16px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.brand{font-weight:800;letter-spacing:.08em;color:#fff}.brand span{color:var(--green)}.sub{color:var(--muted);font-size:12px}.pill{border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--muted);font-size:11px}
+h1{font-size:24px;margin:6px 0 2px}h2{font-size:16px;margin:0 0 12px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab{border:1px solid var(--line);background:#101426;color:var(--muted);padding:9px 13px;border-radius:10px;cursor:pointer}.tab.active{color:var(--green);border-color:#2d967a;background:#102820}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.card,.panel{background:linear-gradient(145deg,#131a2e,#0d1120);border:1px solid var(--line);border-radius:15px;padding:14px;min-width:0}.metric{font-size:22px;font-weight:750;margin-top:5px}.label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.panel{margin:12px 0}.row{display:flex;align-items:center;justify-content:space-between;gap:12px}.green{color:var(--green)}.red{color:var(--red)}.muted{color:var(--muted)}.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.check{display:flex;justify-content:space-between;gap:8px;background:#0b1020;border:1px solid #202944;border-radius:9px;padding:8px;font-size:12px}.check small{display:block;color:var(--muted)}.token{border:1px solid var(--line);background:#0c1120;border-radius:12px;padding:12px;margin:9px 0}.tokenhead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.tokenname{font-weight:750}.tokenmeta{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.status{font-size:10px;font-weight:800;letter-spacing:.06em}.status.ok{color:var(--green)}.status.no{color:var(--red)}a{color:var(--cyan);text-decoration:none}table{width:100%;border-collapse:collapse;font-size:12px}td,th{text-align:left;padding:9px 7px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}.empty{color:var(--muted);padding:18px;text-align:center}.warning{border-color:#66512c;background:#211b11;color:#f5cf83}.foot{text-align:center;color:var(--muted);font-size:11px;margin-top:25px}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.checks{grid-template-columns:1fr}main{padding:16px 12px 40px}.metric{font-size:19px}}
+</style></head><body><main>
+<div class="top"><div><div class="brand">SOL <span>SCANNER</span></div><div class="sub">Signals · Paper Trading · Solana Meme Coins</div></div><div class="pill" id="health">CONNECTING…</div></div>
+<h1>Trading Dashboard</h1><div class="sub">Technical signals and strict new-pool screening. Demo trades only.</div>
+<div class="tabs"><button class="tab active" data-view="sol">SOL Signals</button><button class="tab" data-view="meme">Meme Coin Scanner</button></div>
+<section id="solView">
+<div class="tabs" id="modes"><button class="tab" data-mode="scalp">Scalp</button><button class="tab" data-mode="intraday">Intraday</button><button class="tab active" data-mode="swing">Swing</button></div>
+<div class="grid"><div class="card"><div class="label">SOL/USD</div><div class="metric" id="solPrice">—</div></div><div class="card"><div class="label">Signal</div><div class="metric" id="solStatus">WAIT</div><div class="sub" id="solScore">—</div></div><div class="card"><div class="label">Stop loss</div><div class="metric" id="solStop">—</div></div><div class="card"><div class="label">Target 1</div><div class="metric" id="solTarget">—</div></div></div>
+<div class="panel"><h2>7-point confirmation checklist</h2><div id="solChecks" class="checks"><div class="empty">Loading SOL market data…</div></div><div class="sub" id="solNote" style="margin-top:10px"></div></div>
+<div class="panel"><div class="row"><h2>SOL Paper Trading</h2><span class="pill">Virtual $1,000</span></div><div class="grid"><div><div class="label">Cash</div><div class="metric" id="solCash">—</div></div><div><div class="label">Realized PnL</div><div class="metric" id="solPnl">—</div></div><div><div class="label">Win rate</div><div class="metric" id="solWin">—</div></div><div><div class="label">Trades</div><div class="metric" id="solTrades">—</div></div></div><div id="solOpen" class="sub"></div></div>
 </section>
-<section id="collections" class="hidden"><div class="section-head"><h2>Magic Eden collections</h2><button class="action" onclick="loadCollections(true)">Refresh</button></div><div class="panel"><div class="toolbar"><input id="search" class="search" placeholder="Search collection name or symbol…"><span class="muted" id="collectionMeta">Loading…</span></div><div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>Collection</th><th>Floor</th><th>Highest bid</th><th>Listed</th><th>24H volume</th></tr></thead><tbody id="collectionRows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody></table></div></div></section>
-<section id="sales" class="hidden"><div class="section-head"><h2>Live marketplace feed</h2><button class="action" onclick="loadSales()">Refresh</button></div><div class="panel">
-<div class="tabs" id="feedTypes" style="margin-bottom:12px"><button class="active" data-type="All">All activity</button><button data-type="Listing">Listings</button><button data-type="Offer">Offers</button><button data-type="Sale">Sales</button><button data-type="Update">Updates</button></div>
-<div class="toolbar" style="margin-bottom:12px"><select id="feedMarket" class="search" style="flex:0 1 170px"><option value="All">All marketplaces</option><option>Magic Eden</option><option>Tensor</option></select><input id="feedSearch" class="search" placeholder="Search NFT or collection…"><input id="feedMin" class="search" type="number" min="0" step="0.01" placeholder="Min SOL" style="max-width:110px"><input id="feedMax" class="search" type="number" min="0" step="0.01" placeholder="Max SOL" style="max-width:110px"></div>
-<div class="muted" id="salesMeta">Live events detected from Magic Eden + Tensor program activity.</div><div id="salesList"><div class="empty">Waiting for feed…</div></div><div id="salesWarning" class="warning"></div>
-<div class="warning">Feed starts collecting after monitor startup. Marketplace events can be missed; not a complete historical feed. Tensor offers and OpenSea are not yet connected.</div></div></section>
-<section id="mints" class="hidden"><div class="section-head"><h2>Solana New Mints · All marketplaces</h2><span class="muted" id="mintFeedMeta">Live program feed · refreshes every 12 seconds</span></div><div class="panel"><div id="newMintList"><div class="empty">Waiting for Solana NFT mints…</div></div><div id="newMintWarning" class="warning"></div></div><div class="section-head" style="margin-top:22px"><h2>Collection mint overview</h2><button class="action" onclick="loadCollectionMints(true)">Refresh</button></div><div class="panel"><div class="toolbar"><input id="mintCollectionSearch" class="search" placeholder="Search collection name or symbol…"><span class="muted" id="mintMeta">Loading collection supply and mint details…</span></div><div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>Collection</th><th>Total NFTs</th><th>Minted</th><th>Mint price</th></tr></thead><tbody id="mintList"><tr><td colspan="4" class="empty">Loading collection data…</td></tr></tbody></table></div><div id="mintWarning" class="warning"></div></div></section>
-<section id="sol-signals" class="hidden">
-<div class="section-head"><h2>SOL Trading Signals</h2><button class="action" onclick="loadSolSignals()">Refresh</button></div>
-<div class="tabs" id="solModeTabs" style="margin-bottom:14px">
-<button class="active" data-mode="scalp">Scalp · 2–3H</button>
-<button data-mode="intraday">Intraday · Same day</button>
-<button data-mode="swing">Swing · 2–3 weeks</button>
-</div>
-<div class="muted" id="solModeDescription" style="margin:-4px 0 12px">Short-term signals · 5m + 15m confirmation · refreshes about every minute</div>
-<div class="grid">
-<div class="metric"><small>Signal</small><strong id="solSignalStatus">—</strong><small id="solSignalScore">Waiting for market data</small></div>
-<div class="metric"><small>SOL spot reference</small><strong id="solSignalPrice">—</strong><small id="solSignalUpdated">—</small></div>
-<div class="metric"><small id="solRsiLabel">Primary RSI</small><strong id="solDailyRsi">—</strong><small id="solDailyTrend">—</small></div>
-<div class="metric"><small id="solVolumeLabel">5m volume vs average</small><strong id="solVolumeRatio">—</strong><small>Last closed 4H candle</small></div>
-</div>
-<div class="section panel"><div class="section-head"><h2>Signal trade plan</h2><span class="muted">Indicative levels · USD</span></div>
-<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-<div><small class="muted">Entry zone</small><strong id="solEntry" style="display:block;font-size:20px">—</strong></div>
-<div><small class="muted">Stop loss</small><strong id="solStop" style="display:block;font-size:20px">—</strong></div>
-<div><small class="muted">Target 1</small><strong id="solTarget1" style="display:block;font-size:20px">—</strong></div>
-<div><small class="muted">Target 2</small><strong id="solTarget2" style="display:block;font-size:20px">—</strong></div>
-<div><small class="muted">Target 3</small><strong id="solTarget3" style="display:block;font-size:20px">—</strong></div>
-<div><small class="muted">Risk/reward to T2</small><strong id="solRR" style="display:block;font-size:20px">—</strong></div>
-</div><div class="warning" id="solSignalNote"></div></div>
-<div class="section panel"><div class="section-head"><h2>Confirmation checklist</h2><span class="muted" id="solChecksLabel">5m + 15m + 1H indicators</span></div><div id="solSignalChecks" class="empty">Waiting for data…</div></div>
-<div class="section panel" id="paperTradingPanel">
-<div class="section-head"><h2>Live Paper Trading · Demo only</h2><span class="muted">Virtual balance · no real orders</span></div>
-<div class="grid">
-<div class="metric"><small>Starting balance</small><strong>$1,000</strong><small>Virtual USD</small></div>
-<div class="metric"><small>Available cash</small><strong id="paperCash">—</strong><small>After simulated entries and fees</small></div>
-<div class="metric"><small>Realized profit/loss</small><strong id="paperPnl">—</strong><small>Closed trades only</small></div>
-<div class="metric"><small>Win rate</small><strong id="paperWinRate">—</strong><small id="paperTradeCount">0 completed trades</small></div>
-</div>
-<div class="section-head"><h2>Open demo positions</h2><span class="muted" id="paperOpenCount">—</span></div><div id="paperOpenTrades"><div class="empty">No open demo positions.</div></div>
-<div class="section-head"><h2>Recent demo trades</h2><span class="muted">Latest 20</span></div><div class="table-wrap"><table class="table"><thead><tr><th>Mode</th><th>Entry</th><th>Exit</th><th>Result</th><th>Reason</th></tr></thead><tbody id="paperTradeRows"><tr><td colspan="5" class="empty">No completed demo trades yet.</td></tr></tbody></table></div>
-<div class="warning" id="paperDisclaimer">Paper trading is a simulation. Fees, slippage and candle-based fills are estimates; results do not guarantee real-market performance.</div>
-</div>
-<div class="warning">Signals use Kraken public SOL/USD candles. BUY is a technical setup, not guaranteed profit. Fees, slippage and fast price moves can change results. Read-only: no automatic buying or selling.</div>
+<section id="memeView" hidden>
+<div class="panel warning"><b>Strict mode:</b> Har required check PASS hona zaroori hai. FAIL ya UNKNOWN par paper buy block hoti hai. Bundle result sirf limited on-chain sample heuristic hai, guarantee nahi.</div>
+<div class="grid"><div class="card"><div class="label">Demo cash</div><div class="metric" id="memeCash">$1,000</div></div><div class="card"><div class="label">Realized PnL</div><div class="metric" id="memePnl">—</div></div><div class="card"><div class="label">Win rate</div><div class="metric" id="memeWin">—</div></div><div class="card"><div class="label">Open positions</div><div class="metric" id="memeOpenCount">0</div></div></div>
+<div class="panel"><div class="row"><h2>New Solana pools</h2><span class="pill" id="scanTime">Waiting for feed</span></div><div class="sub" id="scanNote">Discovery via GeckoTerminal · Risk reports via RugCheck · on-chain sample via Helius</div><div id="tokens"><div class="empty">Scanner starting…</div></div></div>
+<div class="panel"><h2>Meme paper positions</h2><div id="memePositions" class="sub">No open demo positions.</div></div>
+<div class="panel"><h2>Completed demo trades</h2><div style="overflow-x:auto"><table><thead><tr><th>Token</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Reason</th></tr></thead><tbody id="memeHistory"><tr><td colspan="5" class="empty">No completed trades yet.</td></tr></tbody></table></div></div>
 </section>
-<p class="foot">Bot by Imran Bugti · Read-only market monitor. No wallet connection, buying, bidding, signing or transactions.</p>
-</main>
+<div class="foot">Bot by Imran Bugti · Read-only market data · No wallet connection · No real orders</div></main>
 <script>
-const $=id=>document.getElementById(id),fmt=n=>n==null?"—":Number(n).toLocaleString(undefined,{maximumFractionDigits:3}),time=t=>t?new Date(t).toLocaleString():"—",esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let collections=[],sales=[],mints=[],currentWindow="1h";
-async function get(url){const r=await fetch(url,{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Request failed");return d}
-function showView(view){document.querySelectorAll("main>section").forEach(s=>s.classList.toggle("hidden",s.id!==view));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));if(view==="collections")renderCollections();if(view==="mints")loadCollectionMints();if(view==="sol-signals")loadSolSignals()}
-document.querySelectorAll(".nav button").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
-document.querySelectorAll("#feedTypes button").forEach(b=>b.addEventListener("click",()=>{feedType=b.dataset.type;document.querySelectorAll("#feedTypes button").forEach(x=>x.classList.toggle("active",x===b));renderFeed()}));
-["feedMarket","feedSearch","feedMin","feedMax"].forEach(id=>$(id).addEventListener("input",renderFeed));
-function collectionRow(c,full=false){return '<tr><td><div class="collection">'+(c.image?'<img class="avatar" src="'+esc(c.image)+'" onerror="this.style.display=\'none\'">':'<div class="avatar"></div>')+'<div><div class="name">'+esc(c.name)+'</div><div class="sub">'+esc(c.symbol)+'</div></div></div></td><td class="price">'+fmt(c.floorPrice)+' SOL</td><td class="price">'+fmt(c.highestBid)+' SOL</td>'+(full?'<td>'+fmt(c.listedCount)+'</td>':'')+'<td class="price">'+fmt(c.volume24h)+' SOL</td></tr>'}
-function renderCollections(){const q=$("search").value.trim().toLowerCase(),rows=collections.filter(c=>(c.name+" "+c.symbol).toLowerCase().includes(q));$("collectionRows").innerHTML=rows.slice(0,100).map(c=>collectionRow(c,true)).join("")||'<tr><td colspan="5" class="empty">No matching collections.</td></tr>';$("collectionMeta").textContent=rows.length+" collections"}
-$("search").addEventListener("input",renderCollections);
-async function loadCollections(force=false){try{if(force)collections=[];const d=await get("/api/collections");collections=d.collections||[];$("count").textContent=collections.length;$("topCollections").innerHTML=collections.slice(0,8).map(c=>collectionRow(c)).join("")||'<tr><td colspan="4" class="empty">No collections returned.</td></tr>';renderCollections()}catch(e){$("topCollections").innerHTML='<tr><td colspan="4" class="empty">'+esc(e.message)+'</td></tr>';$("collectionRows").innerHTML='<tr><td colspan="5" class="empty">'+esc(e.message)+'</td></tr>'}}
-let feedEvents=[],feedType="All";
-function saleHtml(a){const label=a.type||"Sale";return '<div class="sale"><div><b>'+esc(a.name&&a.name!=="NFT"?a.name:(a.collection||a.symbol||"NFT event"))+'</b><div class="sub"><span style="color:#aab8ff">'+esc(label)+'</span> · '+esc(a.marketplace||"Marketplace")+' · '+esc(a.collection||a.symbol||"")+' · '+esc(time(a.time))+(a.signature?' · <a class="link" target="_blank" rel="noopener" href="https://solscan.io/tx/'+encodeURIComponent(a.signature)+'">TX ↗</a>':'')+'</div></div><b>'+fmt(a.price)+' SOL</b></div>'}
-function renderFeed(){const market=$("feedMarket").value,q=$("feedSearch").value.trim().toLowerCase(),min=$("feedMin").value===""?null:Number($("feedMin").value),max=$("feedMax").value===""?null:Number($("feedMax").value);const rows=feedEvents.filter(a=>(feedType==="All"||(feedType==="Update"?String(a.type).toLowerCase().includes("update"):a.type===feedType))&&(market==="All"||a.marketplace===market)&&(!q||(String(a.name)+" "+String(a.collection)+" "+String(a.symbol)).toLowerCase().includes(q))&&(min===null||(a.price!==null&&a.price>=min))&&(max===null||(a.price!==null&&a.price<=max)));$("salesList").innerHTML=rows.slice(0,150).map(saleHtml).join("")||'<div class="empty">No matching events yet.</div>';$("salesMeta").textContent=rows.length+" matching events · "+feedEvents.length+" observed · live refresh every 12 seconds"}
-async function loadSales(){try{const [feed,salesData]=await Promise.all([get("/api/live-feed"),get("/api/live-sales")]);feedEvents=feed.events||[];sales=salesData.sales||[];$("saleCount").textContent=sales.length;renderFeed();$("latestSales").innerHTML=sales.slice(0,5).map(saleHtml).join("")||'<div class="empty">No sales observed yet.</div>';$("salesWarning").textContent=[feed.warning,feed.tensorWarning].filter(Boolean).join(" · ")}catch(e){$("salesWarning").textContent=e.message}}
-function renderNewMints(){
-  $("newMintList").innerHTML=mints.slice(0,150).map(m=>'<div class="mint"><div><b>'+esc(m.name||"New NFT mint")+'</b><div class="sub">'+esc(m.collection||m.symbol||"Unverified collection")+' · '+esc(m.standard||"NFT")+'</div><div class="sub">'+esc(m.mint||"")+'</div></div><div class="sub">'+(m.time?new Date(m.time).toLocaleTimeString():"")+'</div></div>').join("")||'<div class="empty">No new NFT mints observed yet. Feed starts collecting after monitor startup.</div>';
-}
-async function loadMints(){try{const d=await get("/api/new-mints");mints=d.mints||[];$("mintCount").textContent=mints.length;$("mintFeedMeta").textContent=mints.length+" mints observed · all monitored Solana NFT standards";$("newMintWarning").textContent=[d.warning,d.note].filter(Boolean).join(" · ");renderNewMints()}catch(e){$("mintCount").textContent="—";$("newMintWarning").textContent=e.message}}
-
-let collectionMintRows=[];
-function renderCollectionMints(){
-  const q=$("mintCollectionSearch").value.trim().toLowerCase();
-  const rows=collectionMintRows.filter(c=>(c.name+" "+c.symbol).toLowerCase().includes(q));
-  $("mintList").innerHTML=rows.map(c=>'<tr><td><div class="collection">'+(c.image?'<img class="avatar" src="'+esc(c.image)+'" onerror="this.style.display=\'none\'">':'<div class="avatar"></div>')+'<div><div class="name">'+esc(c.name)+'</div><div class="sub">'+esc(c.symbol)+'</div></div></div></td><td class="price">'+fmt(c.totalNfts)+'</td><td class="price">'+fmt(c.minted)+'</td><td class="price">'+(c.mintPrice==null?'—':fmt(c.mintPrice)+' SOL')+'</td></tr>').join("")||'<tr><td colspan="4" class="empty">No matching collections.</td></tr>';
-  $("mintMeta").textContent=rows.length+" collections · — means source data unavailable";
-}
-async function loadCollectionMints(force=false){
-  try{
-    $("mintMeta").textContent="Loading collection mint details…";
-    const d=await get("/api/collection-mints"+(force?"?refresh=1":""));
-    collectionMintRows=d.collections||[];
-    renderCollectionMints();
-    $("mintWarning").textContent=d.warning||"";
-  }catch(e){$("mintWarning").textContent=e.message;$("mintMeta").textContent="Could not load collection data";}
-}
-$("mintCollectionSearch").addEventListener("input",renderCollectionMints);
-
-async function loadVolume(){try{const d=await get("/api/volume"),v=d.windows?.[currentWindow]||{};$("volumeSol").textContent=fmt(v.sol)+" SOL";$("volumeSales").textContent=fmt(v.sales);$("volumeWarning").textContent=[d.warning,d.tensorWarning].filter(Boolean).join(" · ")}catch(e){$("volumeWarning").textContent=e.message}}
-$("volumeTabs").addEventListener("click",e=>{const b=e.target.closest("[data-window]");if(!b)return;currentWindow=b.dataset.window;document.querySelectorAll("#volumeTabs button").forEach(x=>x.classList.toggle("active",x===b));loadVolume()});
-function solFmt(n){return n==null?"—":"$"+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:3})}
-let currentSolMode="scalp";
-const solModeInfo={
- scalp:{description:"Short-term signals · 5m trigger + 15m confirmation · refreshes about every minute",primary:"5m",confirm:"15m",trend:"1H"},
- intraday:{description:"Same-day trades · 15m trigger + 1H confirmation · refreshes about every 3 minutes",primary:"15m",confirm:"1H",trend:"4H"},
- swing:{description:"Position trades · 4H trigger + Daily confirmation · refreshes about every 5 minutes",primary:"4H",confirm:"1D",trend:"1D"}
-};
-$("solModeTabs").addEventListener("click",e=>{const b=e.target.closest("[data-mode]");if(!b)return;currentSolMode=b.dataset.mode;document.querySelectorAll("#solModeTabs button").forEach(x=>x.classList.toggle("active",x===b));loadSolSignals()});
-async function loadSolSignals(){
-  const status=$("solSignalStatus");if(status)status.textContent="Loading…";
-  $("solModeDescription").textContent=solModeInfo[currentSolMode].description;
-  try{
-    const d=await get("/api/sol-signals?mode="+currentSolMode),s=d.signal,h=d.timeframes.primary,confirm=d.timeframes.confirm,trend=d.timeframes.trend;
-    loadPaperTrading();
-    status.textContent=s.status;status.style.color=s.status==="BUY"?"var(--green)":s.status==="WATCH"?"#ffca83":"var(--muted)";
-    $("solSignalScore").textContent=s.score+"/"+s.total+" conditions passed";
-    $("solSignalPrice").textContent=solFmt(h.price);$("solSignalUpdated").textContent="Updated "+time(d.updatedAt);
-    $("solDailyRsi").textContent=h.rsi.toFixed(1);$("solDailyTrend").textContent=trend.bullishTrend?"Higher-timeframe trend bullish":"Higher-timeframe trend not fully bullish";
-    $("solRsiLabel").textContent=d.timeframeLabels.primary+" RSI";
-    $("solVolumeLabel").textContent=d.timeframeLabels.primary+" volume vs average";
-    $("solChecksLabel").textContent=d.timeframeLabels.primary+" + "+d.timeframeLabels.confirm+" + "+d.timeframeLabels.trend+" indicators";
-    $("solVolumeRatio").textContent=h.volumeRatio.toFixed(2)+"×";
-    $("solEntry").textContent=solFmt(s.entry.low)+"–"+solFmt(s.entry.high);
-    $("solStop").textContent=solFmt(s.stopLoss);
-    $("solTarget1").textContent=solFmt(s.targets[0]);$("solTarget2").textContent=solFmt(s.targets[1]);$("solTarget3").textContent=solFmt(s.targets[2]);
-    $("solRR").textContent=s.riskReward[1].toFixed(2)+":1";
-    $("solSignalNote").textContent=s.status==="BUY"?"BUY checklist passed for "+d.hold+". Check price is still inside the entry zone before acting.":s.status==="WATCH"?"Setup is improving, but BUY confirmation is not complete.":"No confirmed "+d.hold+" buy setup. Wait rather than forcing an entry.";
-    $("solSignalChecks").innerHTML=s.reasons.map(x=>'<div class="sale"><span>'+esc(x.label)+'</span><b style="color:'+(x.ok?'var(--green)':'var(--muted)')+'">'+(x.ok?'PASS':'WAIT')+'</b></div>').join("");
-    if(d.warning)$("solSignalNote").textContent+=" · Data warning: "+d.warning;
-  }catch(e){status.textContent="DATA UNAVAILABLE";$("solSignalNote").textContent=e.message}
-}
-
-async function loadPaperTrading(){
- try{
-  const d=await get("/api/paper-trading"),st=d.stats||{};
-  $("paperCash").textContent=solFmt(d.cash);
-  $("paperPnl").textContent=(d.realizedPnl>=0?"+":"")+solFmt(d.realizedPnl);
-  $("paperPnl").style.color=d.realizedPnl>=0?"var(--green)":"var(--red)";
-  $("paperWinRate").textContent=st.winRate==null?"—":st.winRate.toFixed(1)+"%";
-  $("paperTradeCount").textContent=(st.completedTrades||0)+" completed trades";
-  $("paperOpenCount").textContent=(st.openPositions||0)+" open";
-  $("paperOpenTrades").innerHTML=(d.openTrades||[]).map(t=>'<div class="sale"><div><b>'+esc(t.mode.toUpperCase())+'</b><div class="sub">Entry '+solFmt(t.entry)+' · SL '+solFmt(t.stopLoss)+' · TP '+solFmt(t.target)+'</div></div><b>'+fmt(t.quantity)+' SOL</b></div>').join("")||'<div class="empty">No open demo positions. A confirmed signal is required.</div>';
-  $("paperTradeRows").innerHTML=(d.trades||[]).slice(0,20).map(t=>'<tr><td>'+esc(t.mode.toUpperCase())+'</td><td>'+solFmt(t.entry)+'</td><td>'+solFmt(t.exit)+'</td><td style="color:'+(t.pnl>=0?'var(--green)':'var(--red)')+'">'+(t.pnl>=0?'+':'')+solFmt(t.pnl)+'</td><td>'+esc(t.exitReason)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No completed demo trades yet. The bot waits for two consecutive fully confirmed candles.</td></tr>';
-  $("paperDisclaimer").textContent=d.disclaimer;
- }catch(e){$("paperDisclaimer").textContent="Paper trading data unavailable: "+e.message}
-}
-async function health(){try{const d=await get("/api/health");$("health").textContent=d.helius==="configured"?"ME + Tensor on-chain feeds":"Marketplace monitor · Helius key missing";$("lastUpdate").textContent=d.lastPollAt?new Date(d.lastPollAt).toLocaleTimeString():"Waiting"}catch{$("health").textContent="Connection issue"}}
-async function refresh(){await Promise.all([health(),loadSales(),loadMints(),loadVolume()])}
-loadCollections();refresh();loadPaperTrading();setInterval(refresh,12000);setInterval(loadPaperTrading,15000);setInterval(loadCollections,60000);
+const $=id=>document.getElementById(id), money=n=>n==null?"—":"$"+Number(n).toLocaleString("en-US",{maximumFractionDigits:6}), safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let mode="swing", view="sol";
+document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x===b));$("solView").hidden=view!=="sol";$("memeView").hidden=view!=="meme";});
+document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll("[data-mode]").forEach(x=>x.classList.toggle("active",x===b));loadSol();});
+async function get(url){const r=await fetch(url);if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}
+async function loadSol(){try{const d=await get("/api/sol-signals?mode="+mode),s=d.signal,t=d.timeframes.primary;$("solPrice").textContent=money(t.price);$("solStatus").textContent=s.status;$("solStatus").className="metric "+(s.status==="BUY"?"green":"");$("solScore").textContent=s.score+"/"+s.total+" conditions · "+d.hold;$("solStop").textContent=money(s.stopLoss);$("solTarget").textContent=money(s.targets[0]);$("solChecks").innerHTML=s.reasons.map(x=>'<div class="check"><span>'+safe(x.label)+'</span><b class="'+(x.ok?"green":"muted")+'">'+(x.ok?"PASS":"WAIT")+'</b></div>').join("");$("solNote").textContent=d.warning||d.disclaimer||"";}catch(e){$("solNote").textContent="SOL data unavailable: "+e.message;}}
+async function loadSolPaper(){try{const d=await get("/api/paper-trading"),s=d.stats||{};$("solCash").textContent=money(d.cash);$("solPnl").textContent=money(d.realizedPnl);$("solWin").textContent=s.winRate==null?"—":s.winRate+"%";$("solTrades").textContent=(s.completedTrades||0)+" completed";$("solOpen").textContent=(d.openTrades||[]).map(t=>t.mode.toUpperCase()+" entry "+money(t.entry)+" · SL "+money(t.stopLoss)+" · TP "+money(t.target)).join(" | ")||"No open SOL demo positions";}catch(e){$("solOpen").textContent=e.message;}}
+async function loadMeme(){try{const [d,p]=await Promise.all([get("/api/meme-coins"),get("/api/meme-paper-trading")]);$("scanTime").textContent=d.lastScanAt?"Updated "+new Date(d.lastScanAt).toLocaleTimeString():"Waiting";$("scanNote").textContent=d.error?"Feed warning: "+d.error:d.note;$("memeCash").textContent=money(p.cash);$("memePnl").textContent=money(p.realizedPnl);$("memeWin").textContent=p.stats.winRate==null?"—":p.stats.winRate+"%";$("memeOpenCount").textContent=p.stats.openPositions;$("tokens").innerHTML=(d.tokens||[]).map(t=>'<div class="token"><div class="tokenhead"><div><div class="tokenname">'+safe(t.name)+' <span class="muted">'+safe(t.symbol)+'</span></div><div class="tokenmeta">'+safe(t.mint)+'</div><div class="tokenmeta">Age '+(t.ageMinutes??"—")+'m · Liquidity '+money(t.liquidityUsd)+' · 5m vol '+money(t.volume5m)+' · Buys '+(t.buys5m??"—")+'/'+(t.sells5m??"—")+'</div><div class="tokenmeta"><a target="_blank" rel="noopener" href="'+safe(t.url||"#")+'">Open pair</a></div></div><div class="status '+(t.eligible?"ok":"no")+'">'+safe(t.status||"BLOCKED")+'</div></div><div class="checks" style="margin-top:10px">'+(t.checks||[]).map(c=>'<div class="check"><span>'+safe(c.label)+'<small>'+safe(c.detail||"")+'</small></span><b class="status '+(c.ok?"ok":"no")+'">'+safe(c.status)+'</b></div>').join("")+'</div></div>').join("")||'<div class="empty">No new pools found yet.</div>';$("memePositions").innerHTML=(p.openTrades||[]).map(t=>'<div class="check"><span><b>'+safe(t.name)+' ('+safe(t.symbol)+')</b><small>Entry '+money(t.entry)+' · Stop '+money(t.stop)+' · Target '+money(t.target)+'</small></span><b class="green">OPEN</b></div>').join("")||"No open demo positions.";$("memeHistory").innerHTML=(p.trades||[]).map(t=>'<tr><td>'+safe(t.symbol||t.name)+'</td><td>'+money(t.entry)+'</td><td>'+money(t.exit)+'</td><td class="'+(t.pnl>=0?"green":"red")+'">'+money(t.pnl)+'</td><td>'+safe(t.exitReason)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No completed trades yet.</td></tr>';}catch(e){$("scanNote").textContent="Meme scanner unavailable: "+e.message;}}
+async function health(){try{const d=await get("/api/health");$("health").textContent=d.ok?"SYSTEM ONLINE":"OFFLINE";}catch{$("health").textContent="CONNECTION ISSUE";}}
+async function refresh(){await Promise.all([health(),loadSol(),loadSolPaper(),loadMeme()]);}
+refresh();setInterval(refresh,15000);
 </script></body></html>
