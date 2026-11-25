@@ -49,6 +49,18 @@
 <div><small class="muted">Risk/reward to T2</small><strong id="solRR" style="display:block;font-size:20px">—</strong></div>
 </div><div class="warning" id="solSignalNote"></div></div>
 <div class="section panel"><div class="section-head"><h2>Confirmation checklist</h2><span class="muted" id="solChecksLabel">5m + 15m + 1H indicators</span></div><div id="solSignalChecks" class="empty">Waiting for data…</div></div>
+<div class="section panel" id="paperTradingPanel">
+<div class="section-head"><h2>Live Paper Trading · Demo only</h2><span class="muted">Virtual balance · no real orders</span></div>
+<div class="grid">
+<div class="metric"><small>Starting balance</small><strong>$1,000</strong><small>Virtual USD</small></div>
+<div class="metric"><small>Available cash</small><strong id="paperCash">—</strong><small>After simulated entries and fees</small></div>
+<div class="metric"><small>Realized profit/loss</small><strong id="paperPnl">—</strong><small>Closed trades only</small></div>
+<div class="metric"><small>Win rate</small><strong id="paperWinRate">—</strong><small id="paperTradeCount">0 completed trades</small></div>
+</div>
+<div class="section-head"><h2>Open demo positions</h2><span class="muted" id="paperOpenCount">—</span></div><div id="paperOpenTrades"><div class="empty">No open demo positions.</div></div>
+<div class="section-head"><h2>Recent demo trades</h2><span class="muted">Latest 20</span></div><div class="table-wrap"><table class="table"><thead><tr><th>Mode</th><th>Entry</th><th>Exit</th><th>Result</th><th>Reason</th></tr></thead><tbody id="paperTradeRows"><tr><td colspan="5" class="empty">No completed demo trades yet.</td></tr></tbody></table></div>
+<div class="warning" id="paperDisclaimer">Paper trading is a simulation. Fees, slippage and candle-based fills are estimates; results do not guarantee real-market performance.</div>
+</div>
 <div class="warning">Signals use Kraken public SOL/USD candles. BUY is a technical setup, not guaranteed profit. Fees, slippage and fast price moves can change results. Read-only: no automatic buying or selling.</div>
 </section>
 <p class="foot">Bot by Imran Bugti · Read-only market monitor. No wallet connection, buying, bidding, signing or transactions.</p>
@@ -107,6 +119,7 @@ async function loadSolSignals(){
   $("solModeDescription").textContent=solModeInfo[currentSolMode].description;
   try{
     const d=await get("/api/sol-signals?mode="+currentSolMode),s=d.signal,h=d.timeframes.primary,confirm=d.timeframes.confirm,trend=d.timeframes.trend;
+    loadPaperTrading();
     status.textContent=s.status;status.style.color=s.status==="BUY"?"var(--green)":s.status==="WATCH"?"#ffca83":"var(--muted)";
     $("solSignalScore").textContent=s.score+"/"+s.total+" conditions passed";
     $("solSignalPrice").textContent=solFmt(h.price);$("solSignalUpdated").textContent="Updated "+time(d.updatedAt);
@@ -124,7 +137,22 @@ async function loadSolSignals(){
     if(d.warning)$("solSignalNote").textContent+=" · Data warning: "+d.warning;
   }catch(e){status.textContent="DATA UNAVAILABLE";$("solSignalNote").textContent=e.message}
 }
+
+async function loadPaperTrading(){
+ try{
+  const d=await get("/api/paper-trading"),st=d.stats||{};
+  $("paperCash").textContent=solFmt(d.cash);
+  $("paperPnl").textContent=(d.realizedPnl>=0?"+":"")+solFmt(d.realizedPnl);
+  $("paperPnl").style.color=d.realizedPnl>=0?"var(--green)":"var(--red)";
+  $("paperWinRate").textContent=st.winRate==null?"—":st.winRate.toFixed(1)+"%";
+  $("paperTradeCount").textContent=(st.completedTrades||0)+" completed trades";
+  $("paperOpenCount").textContent=(st.openPositions||0)+" open";
+  $("paperOpenTrades").innerHTML=(d.openTrades||[]).map(t=>'<div class="sale"><div><b>'+esc(t.mode.toUpperCase())+'</b><div class="sub">Entry '+solFmt(t.entry)+' · SL '+solFmt(t.stopLoss)+' · TP '+solFmt(t.target)+'</div></div><b>'+fmt(t.quantity)+' SOL</b></div>').join("")||'<div class="empty">No open demo positions. A confirmed signal is required.</div>';
+  $("paperTradeRows").innerHTML=(d.trades||[]).slice(0,20).map(t=>'<tr><td>'+esc(t.mode.toUpperCase())+'</td><td>'+solFmt(t.entry)+'</td><td>'+solFmt(t.exit)+'</td><td style="color:'+(t.pnl>=0?'var(--green)':'var(--red)')+'">'+(t.pnl>=0?'+':'')+solFmt(t.pnl)+'</td><td>'+esc(t.exitReason)+'</td></tr>').join("")||'<tr><td colspan="5" class="empty">No completed demo trades yet. The bot waits for two consecutive fully confirmed candles.</td></tr>';
+  $("paperDisclaimer").textContent=d.disclaimer;
+ }catch(e){$("paperDisclaimer").textContent="Paper trading data unavailable: "+e.message}
+}
 async function health(){try{const d=await get("/api/health");$("health").textContent=d.helius==="configured"?"ME + Tensor on-chain feeds":"Marketplace monitor · Helius key missing";$("lastUpdate").textContent=d.lastPollAt?new Date(d.lastPollAt).toLocaleTimeString():"Waiting"}catch{$("health").textContent="Connection issue"}}
 async function refresh(){await Promise.all([health(),loadSales(),loadMints(),loadVolume()])}
-loadCollections();refresh();setInterval(refresh,12000);setInterval(loadCollections,60000);
+loadCollections();refresh();loadPaperTrading();setInterval(refresh,12000);setInterval(loadPaperTrading,15000);setInterval(loadCollections,60000);
 </script></body></html>
