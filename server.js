@@ -50,9 +50,29 @@ async function meGet(route) {
   if(!response.ok) throw new Error("Magic Eden API returned "+response.status);
   return response.json();
 }
+// Serialize all Helius traffic and back off on rate limits so the three
+// monitor loops cannot stampede the RPC endpoint at the same time.
+let heliusQueue=Promise.resolve(),heliusLastRequestAt=0;
+function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+function heliusFetch(url,options){
+  const task=heliusQueue.then(async()=>{
+    for(let attempt=0;attempt<4;attempt++){
+      const gap=Math.max(0,350-(Date.now()-heliusLastRequestAt));
+      if(gap)await wait(gap);
+      heliusLastRequestAt=Date.now();
+      const response=await fetch(url,options);
+      if(response.status!==429&&response.status<500)return response;
+      if(attempt===3)return response;
+      const retryAfter=Number(response.headers.get("retry-after"));
+      await wait(Number.isFinite(retryAfter)&&retryAfter>0?retryAfter*1000:1000*Math.pow(2,attempt));
+    }
+  });
+  heliusQueue=task.catch(()=>{});
+  return task;
+}
 async function heliusRpc(method,params) {
   if(!HELIUS_RPC) throw new Error("HELIUS_API_KEY is not configured in Railway Variables.");
-  const response=await fetch(HELIUS_RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:"nft-monitor",method,params}),signal:AbortSignal.timeout(12000)});
+  const response=await heliusFetch(HELIUS_RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:"nft-monitor",method,params}),signal:AbortSignal.timeout(12000)});
   if(!response.ok) throw new Error("Helius RPC returned "+response.status);
   const json=await response.json(); if(json.error) throw new Error(json.error.message||"Helius RPC error");
   return json.result;
@@ -64,7 +84,7 @@ async function parseTransactions(signatures) {
   const output=[];
   for(let i=0;i<signatures.length;i+=50){
     const batch=signatures.slice(i,i+50);
-    const response=await fetch("https://api-mainnet.helius-rpc.com/v0/transactions?api-key="+encodeURIComponent(HELIUS_API_KEY),{
+    const response=await heliusFetch("https://api-mainnet.helius-rpc.com/v0/transactions?api-key="+encodeURIComponent(HELIUS_API_KEY),{
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({transactions:batch}),
       signal:AbortSignal.timeout(15000)
@@ -282,5 +302,5 @@ async function removeLegacyBotData(){
 removeLegacyBotData();
 
 app.listen(PORT,()=>console.log("NFT Monitor running on port "+PORT));
-setInterval(()=>{pollGlobalSales();pollTensorSales();pollNewMints();},12000);
+setInterval(()=>{pollGlobalSales();pollTensorSales();pollNewMints();},30000);
 pollGlobalSales();pollTensorSales();pollNewMints();
