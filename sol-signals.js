@@ -45,7 +45,7 @@ function analyze(rows) {
   const volRatio = last.volume / Math.max(avgVol, 1e-9);
   const support = Math.min(...closed.slice(-30).map(x => x.low));
   const resistance = Math.max(...closed.slice(-30).map(x => x.high));
-  return { price: last.close, candleTime: last.time, rsi: r, ema20: e20, ema50: e50, ema200: e200, macd: m.value, macdPrevious: m.previous, volumeRatio: volRatio, support, resistance, bullishTrend: last.close > e50 && e50 > e200, reclaim20: last.close > e20 };
+  return { price: last.close, candleTime: last.time, high: last.high, low: last.low, rsi: r, ema20: e20, ema50: e50, ema200: e200, macd: m.value, macdPrevious: m.previous, volumeRatio: volRatio, support, resistance, bullishTrend: last.close > e50 && e50 > e200, reclaim20: last.close > e20 };
 }
 function makeSignal(primary, confirm, trend, cfg) {
   const checks = [
@@ -87,9 +87,14 @@ async function refresh(mode) {
     const signal = makeSignal(primary, confirm, trend, { ...cfg, primaryLabel: labels[cfg.primary], confirmLabel: labels[cfg.confirm] });
     cache.data = { mode, modeLabel: cfg.label, hold: cfg.hold, symbol: "SOLUSD", quote: "USD", updatedAt: new Date().toISOString(), source: "Kraken public SOL/USD OHLC candles", monitoring: "refreshes on demand at mode-specific cadence", timeframes: { primary, confirm, trend }, timeframeLabels: { primary: labels[cfg.primary], confirm: labels[cfg.confirm], trend: labels[cfg.trend] }, signal, disclaimer: "Technical indicator signal only; not a prediction or guarantee. No wallet access or automatic trading." };
     cache.error = null; cache.at = Date.now();
+    if (typeof appPaperTick === "function") appPaperTick(mode, cache.data);
   } catch (e) { cache.error = e.message; }
 }
+let appPaperTick = null;
 function attach(app) {
+  const paper = require("./paper-trading");
+  paper.attach(app);
+  appPaperTick = paper.tick;
   app.get("/api/sol-signals", async (req, res) => {
     const mode = MODES[req.query.mode] ? req.query.mode : "swing";
     const cache = caches[mode], cfg = MODES[mode];
