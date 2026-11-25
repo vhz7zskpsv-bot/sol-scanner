@@ -122,7 +122,7 @@ async function scan(paper) {
     const candidates = (data.data || []).map(pool => ({ pool, token: getMint(pool, included) })).filter(x => {
       if (!x.token) return false;
       const a = x.pool.attributes || {}, age = a.pool_created_at ? (Date.now() - new Date(a.pool_created_at).getTime()) / 60000 : null;
-      return age !== null && age >= 0 && age <= MAX_AGE && num(a.reserve_in_usd) >= MIN_LIQ && !pools.has(x.token.mint);
+      const prior = pools.get(x.token.mint);\n      return age !== null && age >= 0 && age <= MAX_AGE && num(a.reserve_in_usd) >= MIN_LIQ && (!prior || Date.now() - new Date(prior.updatedAt).getTime() >= 55000);
     }).slice(0, MAX_CANDIDATES);
     for (const item of candidates) {
       try {
