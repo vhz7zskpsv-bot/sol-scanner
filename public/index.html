@@ -6,7 +6,7 @@
 </style></head><body>
 <header><div class="brand"><div class="logo">N</div><div><h1>NFT Monitor</h1><p>Solana marketplace activity · Read only</p></div></div><div class="status"><span class="dot"></span><span id="health">Connecting…</span></div></header>
 <main>
-<nav class="nav"><button class="active" data-view="overview">Overview</button><button data-view="collections">Collections</button><button data-view="sales">Live Sales</button><button data-view="mints">Collection Mints</button></nav>
+<nav class="nav"><button class="active" data-view="overview">Overview</button><button data-view="collections">Collections</button><button data-view="sales">Live Sales</button><button data-view="mints">Collection Mints</button><button data-view="sol-signals">SOL Signals</button></nav>
 <section id="overview">
 <div class="grid">
 <div class="metric"><small>Collections indexed</small><strong id="count">—</strong><small>Magic Eden directory</small></div>
@@ -25,13 +25,33 @@
 <div class="muted" id="salesMeta">Live events detected from Magic Eden + Tensor program activity.</div><div id="salesList"><div class="empty">Waiting for feed…</div></div><div id="salesWarning" class="warning"></div>
 <div class="warning">Feed starts collecting after monitor startup. Marketplace events can be missed; not a complete historical feed. Tensor offers and OpenSea are not yet connected.</div></div></section>
 <section id="mints" class="hidden"><div class="section-head"><h2>Solana New Mints · All marketplaces</h2><span class="muted" id="mintFeedMeta">Live program feed · refreshes every 12 seconds</span></div><div class="panel"><div id="newMintList"><div class="empty">Waiting for Solana NFT mints…</div></div><div id="newMintWarning" class="warning"></div></div><div class="section-head" style="margin-top:22px"><h2>Collection mint overview</h2><button class="action" onclick="loadCollectionMints(true)">Refresh</button></div><div class="panel"><div class="toolbar"><input id="mintCollectionSearch" class="search" placeholder="Search collection name or symbol…"><span class="muted" id="mintMeta">Loading collection supply and mint details…</span></div><div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>Collection</th><th>Total NFTs</th><th>Minted</th><th>Mint price</th></tr></thead><tbody id="mintList"><tr><td colspan="4" class="empty">Loading collection data…</td></tr></tbody></table></div><div id="mintWarning" class="warning"></div></div></section>
+<section id="sol-signals" class="hidden">
+<div class="section-head"><h2>SOL Swing Signals · 2–3 week hold</h2><button class="action" onclick="loadSolSignals()">Refresh</button></div>
+<div class="grid">
+<div class="metric"><small>Signal</small><strong id="solSignalStatus">—</strong><small id="solSignalScore">Waiting for market data</small></div>
+<div class="metric"><small>SOL spot reference</small><strong id="solSignalPrice">—</strong><small id="solSignalUpdated">—</small></div>
+<div class="metric"><small>Daily RSI</small><strong id="solDailyRsi">—</strong><small id="solDailyTrend">—</small></div>
+<div class="metric"><small>4H volume vs average</small><strong id="solVolumeRatio">—</strong><small>Last closed 4H candle</small></div>
+</div>
+<div class="section panel"><div class="section-head"><h2>Signal trade plan</h2><span class="muted">Indicative levels · USDT</span></div>
+<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+<div><small class="muted">Entry zone</small><strong id="solEntry" style="display:block;font-size:20px">—</strong></div>
+<div><small class="muted">Stop loss</small><strong id="solStop" style="display:block;font-size:20px">—</strong></div>
+<div><small class="muted">Target 1</small><strong id="solTarget1" style="display:block;font-size:20px">—</strong></div>
+<div><small class="muted">Target 2</small><strong id="solTarget2" style="display:block;font-size:20px">—</strong></div>
+<div><small class="muted">Target 3</small><strong id="solTarget3" style="display:block;font-size:20px">—</strong></div>
+<div><small class="muted">Risk/reward to T2</small><strong id="solRR" style="display:block;font-size:20px">—</strong></div>
+</div><div class="warning" id="solSignalNote"></div></div>
+<div class="section panel"><div class="section-head"><h2>Confirmation checklist</h2><span class="muted">Daily + 4H indicators</span></div><div id="solSignalChecks" class="empty">Waiting for data…</div></div>
+<div class="warning">Signals use public Binance SOL/USDT spot candles. BUY means the technical checklist passed; it is not a guaranteed return. This is read-only: no wallet connection, automatic buying, or whale-flow verification.</div>
+</section>
 <p class="foot">Read-only market monitor. No wallet connection, buying, bidding, signing or transactions.</p>
 </main>
 <script>
 const $=id=>document.getElementById(id),fmt=n=>n==null?"—":Number(n).toLocaleString(undefined,{maximumFractionDigits:3}),time=t=>t?new Date(t).toLocaleString():"—",esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let collections=[],sales=[],mints=[],currentWindow="1h";
 async function get(url){const r=await fetch(url,{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error||"Request failed");return d}
-function showView(view){document.querySelectorAll("main>section").forEach(s=>s.classList.toggle("hidden",s.id!==view));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));if(view==="collections")renderCollections();if(view==="mints")loadCollectionMints()}
+function showView(view){document.querySelectorAll("main>section").forEach(s=>s.classList.toggle("hidden",s.id!==view));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));if(view==="collections")renderCollections();if(view==="mints")loadCollectionMints();if(view==="sol-signals")loadSolSignals()}
 document.querySelectorAll(".nav button").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 document.querySelectorAll("#feedTypes button").forEach(b=>b.addEventListener("click",()=>{feedType=b.dataset.type;document.querySelectorAll("#feedTypes button").forEach(x=>x.classList.toggle("active",x===b));renderFeed()}));
 ["feedMarket","feedSearch","feedMin","feedMax"].forEach(id=>$(id).addEventListener("input",renderFeed));
@@ -68,6 +88,25 @@ $("mintCollectionSearch").addEventListener("input",renderCollectionMints);
 
 async function loadVolume(){try{const d=await get("/api/volume"),v=d.windows?.[currentWindow]||{};$("volumeSol").textContent=fmt(v.sol)+" SOL";$("volumeSales").textContent=fmt(v.sales);$("volumeWarning").textContent=[d.warning,d.tensorWarning].filter(Boolean).join(" · ")}catch(e){$("volumeWarning").textContent=e.message}}
 $("volumeTabs").addEventListener("click",e=>{const b=e.target.closest("[data-window]");if(!b)return;currentWindow=b.dataset.window;document.querySelectorAll("#volumeTabs button").forEach(x=>x.classList.toggle("active",x===b));loadVolume()});
+function solFmt(n){return n==null?"—":"$"+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:3})}
+async function loadSolSignals(){
+  const status=$("solSignalStatus");if(status)status.textContent="Loading…";
+  try{
+    const d=await get("/api/sol-signals"),s=d.signal,h=d.timeframes["4h"],day=d.timeframes["1d"];
+    status.textContent=s.status;status.style.color=s.status==="BUY"?"var(--green)":s.status==="WATCH"?"#ffca83":"var(--muted)";
+    $("solSignalScore").textContent=s.score+"/"+s.total+" conditions passed";
+    $("solSignalPrice").textContent=solFmt(h.price);$("solSignalUpdated").textContent="Updated "+time(d.updatedAt);
+    $("solDailyRsi").textContent=day.rsi.toFixed(1);$("solDailyTrend").textContent=day.bullishTrend?"Above EMA50/200":"Trend not fully bullish";
+    $("solVolumeRatio").textContent=h.volumeRatio.toFixed(2)+"×";
+    $("solEntry").textContent=solFmt(s.entry.low)+"–"+solFmt(s.entry.high);
+    $("solStop").textContent=solFmt(s.stopLoss);
+    $("solTarget1").textContent=solFmt(s.targets[0]);$("solTarget2").textContent=solFmt(s.targets[1]);$("solTarget3").textContent=solFmt(s.targets[2]);
+    $("solRR").textContent=s.riskReward[1].toFixed(2)+":1";
+    $("solSignalNote").textContent=s.status==="BUY"?"BUY checklist passed. Check the current price is still inside the entry zone before acting.":s.status==="WATCH"?"Setup is improving, but strict BUY confirmation is not complete.":"No confirmed swing-buy setup. Preserve capital and wait.";
+    $("solSignalChecks").innerHTML=s.reasons.map(x=>'<div class="sale"><span>'+esc(x.label)+'</span><b style="color:'+(x.ok?'var(--green)':'var(--muted)')+'">'+(x.ok?'PASS':'WAIT')+'</b></div>').join("");
+    if(d.warning)$("solSignalNote").textContent+=" · Data warning: "+d.warning;
+  }catch(e){status.textContent="DATA UNAVAILABLE";$("solSignalNote").textContent=e.message}
+}
 async function health(){try{const d=await get("/api/health");$("health").textContent=d.helius==="configured"?"ME + Tensor on-chain feeds":"Marketplace monitor · Helius key missing";$("lastUpdate").textContent=d.lastPollAt?new Date(d.lastPollAt).toLocaleTimeString():"Waiting"}catch{$("health").textContent="Connection issue"}}
 async function refresh(){await Promise.all([health(),loadSales(),loadMints(),loadVolume()])}
 loadCollections();refresh();setInterval(refresh,12000);setInterval(loadCollections,60000);
