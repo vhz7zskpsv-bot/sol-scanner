@@ -1,5 +1,11 @@
-const HELIUS_KEY = process.env.HELIUS_API_KEY || "";
-const HELIUS_RPC = HELIUS_KEY ? "https://mainnet.helius-rpc.com/?api-key=" + encodeURIComponent(HELIUS_KEY) : "";
+// No Helius dependency. Use a no-key public RPC first, then Solana's public endpoint.
+const RPC_ENDPOINTS = [...new Set([
+  process.env.SOLANA_RPC_URL,
+  "https://solana-rpc.publicnode.com",
+  "https://api.mainnet.solana.com"
+].filter(Boolean))];
+let activeRpc = RPC_ENDPOINTS[0] || null;
+let rpcStatus = { endpoint: activeRpc, state: "NOT_TESTED", lastError: null };
 const pools = new Map(), reportCache = new Map();
 let lastScanAt = null, scanError = null, busy = false;
 const MAX_CANDIDATES = 3;
@@ -11,10 +17,25 @@ async function json(url, options = {}, timeout = 12000) {
   return r.json();
 }
 async function rpc(method, params) {
-  if (!HELIUS_RPC) throw new Error("HELIUS_API_KEY missing");
-  const data = await json(HELIUS_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }, 12000);
-  if (data.error) throw new Error(data.error.message || "Helius RPC error");
-  return data.result;
+  let lastError = new Error("No public Solana RPC endpoints configured");
+  const ordered = [...RPC_ENDPOINTS].sort((a, b) => (a === activeRpc ? -1 : b === activeRpc ? 1 : 0));
+  for (const endpoint of ordered) {
+    try {
+      const data = await json(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+      }, 12000);
+      if (data.error) throw new Error(data.error.message || "Solana RPC error");
+      activeRpc = endpoint;
+      rpcStatus = { endpoint, state: "ONLINE", lastError: null };
+      return data.result;
+    } catch (e) {
+      lastError = e;
+      rpcStatus = { endpoint, state: "DEGRADED", lastError: e.message };
+    }
+  }
+  throw lastError;
 }
 function includedMap(items) { return new Map((items || []).map(x => [x.id, x.attributes || {}])); }
 function getMint(pool, included) {
@@ -161,6 +182,7 @@ function attach(app, paper) {
   app.get("/api/meme-coins", (_req, res) => res.json({
     tokens: [...pools.values()].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))),
     lastScanAt, error: scanError, scanning: busy,
+    rpc: { state: rpcStatus.state, endpoint: rpcStatus.endpoint, lastError: rpcStatus.lastError, heliusRequired: false },
     config: { minLiquidityUsd: MIN_LIQ, minVolume5mUsd: MIN_VOL5, ageMinutes: [MIN_AGE, MAX_AGE], paperTradingOnly: true },
     note: "New-pool discovery is an indexer feed, not every mint. Bundle check is a limited same-slot buyer heuristic, not proof that all coordinated wallets are absent. Unknown checks block paper entries."
   }));
