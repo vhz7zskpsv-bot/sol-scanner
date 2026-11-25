@@ -134,8 +134,24 @@ async function scan(paper) {
         pools.set(item.token.mint, { mint: item.token.mint, name: item.token.name || "Unknown", symbol: item.token.symbol || "", status: "BLOCKED", eligible: false, checks: [{ label: "Security report", status: "FAIL/UNKNOWN", ok: false, detail: e.message }], updatedAt: new Date().toISOString() });
       }
     }
-    // Refresh prices for paper positions and existing candidates from GeckoTerminal token data.
-    for (const mint of Object.keys(paper.snapshot().openTrades || {})) { void mint; }
+    // Refresh live prices for open demo positions so stop-loss / take-profit can execute.
+    const openPositions = paper.snapshot().openTrades || [];
+    const openMints = openPositions.map(t => t.mint).filter(Boolean).slice(0, 30);
+    if (openMints.length) {
+      try {
+        const livePairs = await json("https://api.dexscreener.com/tokens/v1/solana/" + openMints.join(","), {}, 12000);
+        for (const position of openPositions) {
+          const pair = (Array.isArray(livePairs) ? livePairs : [])
+            .filter(x => x.baseToken?.address === position.mint && num(x.priceUsd) > 0)
+            .sort((a, b) => (num(b.liquidity?.usd) || 0) - (num(a.liquidity?.usd) || 0))[0];
+          if (pair) paper.observe({
+            mint: position.mint, name: pair.baseToken?.name || position.name,
+            symbol: pair.baseToken?.symbol || position.symbol,
+            priceUsd: num(pair.priceUsd), eligible: false
+          });
+        }
+      } catch (e) { console.warn("Open meme position price refresh:", e.message); }
+    }
     lastScanAt = new Date().toISOString(); scanError = null;
     while (pools.size > 100) pools.delete(pools.keys().next().value);
   } catch (e) { scanError = e.message; }
