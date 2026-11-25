@@ -303,6 +303,7 @@ async function removeLegacyBotData(){
 }
 removeLegacyBotData();
 
+require("./sol-signals").attach(app);
 app.listen(PORT,()=>console.log("NFT Monitor running on port "+PORT));
 setInterval(()=>{pollGlobalSales();pollTensorSales();pollNewMints();},30000);
 pollGlobalSales();pollTensorSales();pollNewMints();
